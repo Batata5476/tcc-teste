@@ -4,14 +4,28 @@ import { Platform } from 'react-native';
 function resolveApiUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 
-  // 1. Se uma URL externa HTTPS (ex: túnel ngrok / produção) foi definida explicitamente, prioriza ela
+  // 1. Se uma URL externa HTTPS (ex: Vercel / produção / túnel ngrok) foi definida explicitamente, prioriza ela
   if (envUrl && envUrl.startsWith('https://')) {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // 2. No navegador (Web), usa sempre o mesmo hostname da barra de endereços (localhost ou IP da máquina)
+  // 2. No navegador (Web), detecta se é ambiente local (usa porta 3000) ou produção (usa EXPO_PUBLIC_API_URL / origin)
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.hostname) {
-    return `http://${window.location.hostname}:3000`;
+    const host = window.location.hostname;
+    const isLocal =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.') ||
+      host.startsWith('172.');
+
+    if (isLocal) {
+      return `http://${host}:3000`;
+    }
+    if (envUrl) {
+      return envUrl.replace(/\/+$/, '');
+    }
+    return window.location.origin;
   }
 
   // 3. No Expo Go / celular físico, hostUri traz automaticamente o IP atual do PC no Wi-Fi ou Roteador 4G

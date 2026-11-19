@@ -1077,7 +1077,7 @@ export default function PontoE() {
         <TouchableOpacity
           style={styles.navButton}
           activeOpacity={0.8}
-          onPress={() => router.push("/dashboard")}
+          onPress={() => router.replace("/dashboard")}
         >
           <Ionicons name="home" size={26} color="#94A3B8" />
           <Text style={[styles.navLabel, { color: "#94A3B8" }]}>central</Text>

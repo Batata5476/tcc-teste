@@ -523,7 +523,7 @@ export default function GestaoFuncionariosScreen() {
                         </Text>
                         <Text style={styles.employeeRole} numberOfLines={1}>
                           {emp.cargo || emp.role?.nome || "Colaborador"}
-                          {(emp.setor?.nome || emp.setor?.nome_setor)
+                          {emp.setor?.nome || emp.setor?.nome_setor
                             ? ` • ${emp.setor?.nome || emp.setor?.nome_setor}`
                             : ""}
                         </Text>

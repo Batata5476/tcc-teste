@@ -123,4 +123,28 @@ describe('WorkService geolocation', () => {
       ),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('prevents an admin employee from updating or removing another employee point record', async () => {
+    workRepository.findOne.mockResolvedValue({
+      pk_id_ponto: 15,
+      fk_id_func: 99,
+      entrada: '08:00:00',
+      saida: '08:00:00',
+      data_ponto: new Date('2026-10-04'),
+      total_dia: '00:00:00',
+    });
+    userRepository.findOne.mockResolvedValue({ id: 99, empresa_id: 3 });
+
+    await expect(
+      service.update(
+        15,
+        { saida: '17:00:00', latitude: point.latitude, longitude: point.longitude },
+        { ...caller, role: ROLES.ADMIN },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+
+    await expect(
+      service.remove(15, { ...caller, role: ROLES.ADMIN }),
+    ).rejects.toThrow(ForbiddenException);
+  });
 });

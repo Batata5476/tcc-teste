@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -11,8 +11,9 @@ import { Role } from '../users/entities/role.entity';
 import { ROLES } from '../auth/authorization.constants';
 
 const DEFAULT_COMPANY_SECTORS = [
+  'Geral',
   'Administrativo',
-  'Operacional',
+  'Operações',
   'Tecnologia',
   'Recursos Humanos',
   'Comercial',
@@ -31,6 +32,20 @@ export class CompanyService {
     private roleRepository: Repository<Role>,
     private dataSource: DataSource,
   ) {}
+
+  private validatePasswordPolicy(password: string) {
+    const minLength = Boolean(password && password.length >= 8);
+    const hasUpper = /[A-Z]/.test(password || '');
+    const hasLower = /[a-z]/.test(password || '');
+    const hasNumber = /[0-9]/.test(password || '');
+    const hasSymbol = /[^A-Za-z0-9]/.test(password || '');
+
+    if (!minLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
+      throw new BadRequestException(
+        'A senha deve conter no mínimo 8 caracteres, incluindo uma letra maiúscula, uma minúscula, um número e um caractere especial.',
+      );
+    }
+  }
 
   async findSectors(empresaId: number) {
     let sectors = await this.setorRepository.find({
@@ -52,9 +67,13 @@ export class CompanyService {
   }
 
   async createSector(empresaId: number, nome: string) {
-    const cleanNome = nome.trim();
+    const cleanName = (nome || '').trim();
+    if (!cleanName) {
+      throw new BadRequestException('O nome do setor é obrigatório.');
+    }
+
     const existing = await this.setorRepository.findOne({
-      where: { empresa_id: empresaId, nome: cleanNome },
+      where: { empresa_id: empresaId, nome: cleanName },
     });
     if (existing) {
       return {
@@ -64,13 +83,13 @@ export class CompanyService {
       };
     }
 
-    const created = await this.setorRepository.save(
-      this.setorRepository.create({ empresa_id: empresaId, nome: cleanNome }),
+    const saved = await this.setorRepository.save(
+      this.setorRepository.create({ empresa_id: empresaId, nome: cleanName }),
     );
     return {
       status: 'success',
       message: 'Setor criado com sucesso',
-      data: created,
+      data: saved,
     };
   }
 
@@ -107,6 +126,7 @@ export class CompanyService {
 
   async create(createCompanyDto: CreateCompanyDto) {
     const { senha_empresa, cnpj, nome, email, tipo_empresa, latitude, longitude } = createCompanyDto;
+    this.validatePasswordPolicy(senha_empresa);
     const cleanCnpj = cnpj.replace(/\D/g, '');
     const cleanEmail = email.trim().toLowerCase();
 
@@ -133,7 +153,7 @@ export class CompanyService {
       throw new NotFoundException('Role Administrador Master não encontrada no banco');
     }
 
-    // Transação atômica para criação da empresa e do usuário Master
+    // Transação atômica para criação da empresa, setores padrão e usuário Master
     const result = await this.dataSource.transaction(async (transactionalEntityManager) => {
       // Verificar também se o e-mail já está em uso por algum usuário
       const existingUserEmail = await this.userRepository.findOne({
@@ -210,7 +230,7 @@ export class CompanyService {
 
   async remove(id: number, empresaId: number) {
     const response = await this.findOne(id, empresaId);
-    
+
     // Soft disable dos usuários associados à empresa antes ou inativação para evitar violar FKs
     await this.userRepository.update({ empresa_id: id }, { status: 'DELETED' });
     await this.companyRepository.remove(response.data as Company);

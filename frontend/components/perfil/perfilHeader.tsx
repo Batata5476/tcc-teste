@@ -16,7 +16,7 @@ export default function PerfilHeader({ onBack, onLogout }: PerfilHeaderProps) {
     if (onBack) {
       onBack();
     } else {
-      router.back();
+      router.replace("/dashboard");
     }
   };
 

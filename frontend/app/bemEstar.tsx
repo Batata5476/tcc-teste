@@ -168,7 +168,7 @@ export function Emotions() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <PerfilHeader onBack={() => router.push("/dashboard")} />
+      <PerfilHeader onBack={() => router.replace("/dashboard")} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

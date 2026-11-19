@@ -227,7 +227,7 @@ export default function PerfilFunc() {
                 icon="list-outline"
                 title="Minhas tarefas"
                 subtitle="Veja suas pendências"
-                onPress={() => router.push("/dashboard")}
+                onPress={() => router.replace("/dashboard")}
               />
             </View>
           </>

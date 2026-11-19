@@ -94,6 +94,23 @@ export default function CadastroEmpresa() {
       return;
     }
 
+    const minLength = senha.length >= 8;
+    const hasUpper = /[A-Z]/.test(senha);
+    const hasLower = /[a-z]/.test(senha);
+    const hasNumber = /[0-9]/.test(senha);
+    const hasSymbol = /[^A-Za-z0-9]/.test(senha);
+
+    if (!minLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
+      setFeedback({
+        visible: true,
+        type: "error",
+        title: "Senha Fraca",
+        message:
+          "A senha deve conter no mínimo 8 caracteres, incluindo letra maiúscula, minúscula, número e caractere especial.",
+      });
+      return;
+    }
+
     try {
       const response = await fetch(`${API_URL}/company`, {
         method: "POST",
@@ -118,14 +135,14 @@ export default function CadastroEmpresa() {
           type: "success",
           title: "Empresa Cadastrada! ",
           message: `A empresa "${nome}" foi registrada com sucesso. Você já pode fazer login.`,
-          onCloseAction: () => router.push("/loginEmpresa"),
+          onCloseAction: () => router.replace("/"),
         });
       } else {
         setFeedback({
           visible: true,
           type: "error",
           title: "Falha no Cadastro",
-          message: data.message || "Erro ao efetuar o cadastro da empresa.",
+          message: Array.isArray(data.message) ? data.message.join("\n") : (data.message || "Erro ao efetuar o cadastro da empresa."),
         });
       }
     }
@@ -169,7 +186,7 @@ export default function CadastroEmpresa() {
 
       <TouchableOpacity
         style={styles.secondaryButton}
-        onPress={() => router.push("/loginEmpresa")}
+        onPress={() => router.replace("/")}
       >
         <Text style={styles.secondaryButtonText}>Voltar</Text>
       </TouchableOpacity>

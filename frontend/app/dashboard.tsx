@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   Linking,
   Modal,
@@ -305,6 +306,25 @@ export default function Dashboard() {
   useFocusEffect(
     useCallback(() => {
       fetchDashboard();
+
+      // Impede voltar a telas anteriores quando o usuário já está no Dashboard
+      const backSub = BackHandler.addEventListener("hardwareBackPress", () => true);
+
+      let handlePopState: (() => void) | null = null;
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.history.pushState(null, "", window.location.href);
+        handlePopState = () => {
+          window.history.pushState(null, "", window.location.href);
+        };
+        window.addEventListener("popstate", handlePopState);
+      }
+
+      return () => {
+        backSub.remove();
+        if (Platform.OS === "web" && typeof window !== "undefined" && handlePopState) {
+          window.removeEventListener("popstate", handlePopState);
+        }
+      };
     }, [fetchDashboard])
   );
 

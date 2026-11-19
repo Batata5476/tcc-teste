@@ -5,6 +5,7 @@ import { Task } from './entities/task.entity';
 import { FuncTarefa } from './entities/func-tarefa.entity';
 import { User } from '../users/entities/user.entity';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ROLES } from '../auth/authorization.constants';
 
 describe('TasksService', () => {
   let service: TasksService;
@@ -15,19 +16,19 @@ describe('TasksService', () => {
   const mockCallerUser = {
     sub: 10,
     empresa_id: 1,
-    role: 'FUNCIONARIO',
+    role: ROLES.EMPLOYEE,
   };
 
   const mockCallerAdmin = {
     sub: 1,
     empresa_id: 1,
-    role: 'ADMIN',
+    role: ROLES.ADMIN,
   };
 
   beforeEach(async () => {
     taskRepository = {
       create: jest.fn((dto) => dto),
-      save: jest.fn((entity) => Promise.resolve({ pk_id_tarefa: 100, ...entity })),
+      save: jest.fn((entity) => Promise.resolve({ pk_id_tarefas: 100, ...entity })),
       findOne: jest.fn(),
     };
 
@@ -40,6 +41,7 @@ describe('TasksService', () => {
 
     userRepository = {
       findOne: jest.fn(),
+      increment: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -114,9 +116,36 @@ describe('TasksService', () => {
       );
 
       expect(taskRepository.save).toHaveBeenCalled();
-      expect(funcTarefaRepository.save).toHaveBeenCalled();
+      expect(funcTarefaRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fk_id_func: 10,
+          fk_cod_empresa: 1,
+          fk_id_tarefa: 100,
+        }),
+      );
       expect(response.status).toBe('success');
       expect(response.data.tipo_tarefa).toBe('Nova Tarefa');
+    });
+
+    it('should assign task to caller automatically when created by an employee', async () => {
+      userRepository.findOne.mockResolvedValue({ id: 10, empresa_id: 1, nome: 'João' });
+
+      const response = await service.create(
+        {
+          tipo_tarefa: 'Tarefa Pessoal',
+          validade_tarefa: '2026-10-05',
+          prioridade_tarefa: 2,
+        },
+        mockCallerUser,
+      );
+
+      expect(funcTarefaRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fk_id_func: 10,
+          fk_cod_empresa: 1,
+        }),
+      );
+      expect(response.status).toBe('success');
     });
   });
 
@@ -139,21 +168,25 @@ describe('TasksService', () => {
       );
     });
 
-    it('should update status successfully when caller has access', async () => {
+    it('should update status successfully and award +100 points when completed', async () => {
       taskRepository.findOne.mockResolvedValue({ pk_id_tarefas: 1, status_tarefa: 3 });
       const relation = {
         fk_id_tarefa: 1,
         fk_id_func: 10,
         fk_cod_empresa: 1,
         status_tarefa: 3,
-        save: jest.fn(),
       };
       funcTarefaRepository.find.mockResolvedValue([relation]);
-      funcTarefaRepository.save.mockImplementation((rel) => Promise.resolve(rel));
+      funcTarefaRepository.findOne.mockResolvedValue(relation);
 
       const response = await service.updateStatus(1, 1, mockCallerUser);
       expect(response.status).toBe('success');
       expect(response.data.status_tarefa).toBe(1);
+      expect(userRepository.increment).toHaveBeenCalledWith(
+        { id: 10 },
+        'pontos_acumulados',
+        100,
+      );
     });
   });
 });

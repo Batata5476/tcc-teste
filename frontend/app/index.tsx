@@ -665,13 +665,11 @@ export default function LoginScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[s.firstAccessBtn, { marginTop: 10, borderWidth: 0 }]}
+                  style={s.registerCompanyLink}
                   onPress={() => router.push("/cadastroEmpresa")}
                   activeOpacity={0.8}
                 >
-                  <Text style={[s.firstAccessText, { fontSize: 13 }]}>
-                    Cadastrar nova empresa
-                  </Text>
+                  <Text style={s.registerCompanyText}>Cadastrar nova empresa</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -818,6 +816,8 @@ const s = StyleSheet.create({
   loginBtnText: { color: "#fff", fontSize: 15, fontWeight: "700", letterSpacing: 0.2 },
   firstAccessBtn: { backgroundColor: "#ECEFDA", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   firstAccessText: { color: "#285A71", fontSize: 14, fontWeight: "600" },
+  registerCompanyLink: { alignItems: "center", marginTop: 14, paddingVertical: 6 },
+  registerCompanyText: { color: "#285A71", fontSize: 13, fontWeight: "600" },
 });
 
 const ms = StyleSheet.create({

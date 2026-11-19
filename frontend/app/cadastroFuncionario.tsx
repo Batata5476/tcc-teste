@@ -42,7 +42,7 @@ export default function CadastroFuncionario() {
           const list: SectorOption[] = body.data ?? [];
           setSectors(list);
           if (list.length > 0) {
-            setSetorId(String(list[0].id));
+            setSetorId((prev) => prev || String(list[0].id));
           }
         }
       } catch (err) {
@@ -76,7 +76,6 @@ export default function CadastroFuncionario() {
       setCreatingSector(false);
     }
   };
-
   // Estado do FeedbackModal
   const [feedback, setFeedback] = useState<{
     visible: boolean;
@@ -267,7 +266,7 @@ export default function CadastroFuncionario() {
         ) : (
           <TextInput
             style={styles.input}
-            placeholder="ID do Setor"
+            placeholder="ID do Setor (Ex: 1)"
             keyboardType="numeric"
             value={setorId}
             onChangeText={setSetorId}

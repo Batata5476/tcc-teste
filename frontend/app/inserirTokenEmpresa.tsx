@@ -19,7 +19,7 @@ export default function InserirTokenEmpresa() {
     try {
       await saveToken(cleanToken);
       Alert.alert("Sucesso", "Login realizado com sucesso!");
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch (error: any) {
       Alert.alert("Erro", error.message || "Nao foi possivel entrar.");
     }

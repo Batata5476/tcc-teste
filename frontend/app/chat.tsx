@@ -854,7 +854,7 @@ export default function ChatScreen() {
         <View style={styles.sidebarHeaderLeft}>
           <TouchableOpacity
             style={styles.backToDashboardBtn}
-            onPress={() => router.push("/dashboard")}
+            onPress={() => router.replace("/dashboard")}
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
@@ -1081,7 +1081,7 @@ export default function ChatScreen() {
         <TouchableOpacity
           style={styles.navButton}
           activeOpacity={0.8}
-          onPress={() => router.push("/dashboard")}
+          onPress={() => router.replace("/dashboard")}
         >
           <Ionicons name="home" size={26} color="#94A3B8" />
           <Text style={[styles.navLabel, { color: "#94A3B8" }]}>central</Text>

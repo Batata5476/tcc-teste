@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ExpressAdapter } from '@nestjs/platform-express';
 import { json, urlencoded } from 'express';
 import * as express from 'express';
 import { join } from 'path';
@@ -28,10 +29,8 @@ function validateRequiredEnv(config: ConfigService) {
   }
 }
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+function configureApp(app: INestApplication) {
   const config = app.get(ConfigService);
-
   validateRequiredEnv(config);
 
   app.use(json({ limit: '10mb' }));
@@ -54,8 +53,36 @@ async function bootstrap() {
     }),
   );
 
+  return config;
+}
+
+let cachedServer: express.Express | null = null;
+
+async function getServerlessHandler(): Promise<express.Express> {
+  if (!cachedServer) {
+    const expressApp = express();
+    const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
+    configureApp(app);
+    await app.init();
+    cachedServer = expressApp;
+  }
+  return cachedServer;
+}
+
+export default async function handler(req: express.Request, res: express.Response) {
+  const server = await getServerlessHandler();
+  return server(req, res);
+}
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const config = configureApp(app);
+
   const port = Number(config.get<number>('PORT') ?? 3000);
   await app.listen(port, '0.0.0.0');
   console.log(`Application is running on: http://0.0.0.0:${port}`);
 }
-bootstrap();
+
+if (!process.env.VERCEL) {
+  bootstrap();
+}

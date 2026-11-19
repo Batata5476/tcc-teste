@@ -184,6 +184,9 @@ export class WorkService {
     }
 
     const work = await this.validateWorkAccess(id, caller);
+    if (work.fk_id_func !== caller.sub) {
+      throw new ForbiddenException('Voce so pode atualizar seus proprios registros de ponto');
+    }
 
     if (updateDto.saida !== undefined) {
       // Para registrar a saída, exige e valida novamente a posição atual do funcionário.
@@ -223,6 +226,9 @@ export class WorkService {
     }
 
     const work = await this.validateWorkAccess(id, caller);
+    if (work.fk_id_func !== caller.sub) {
+      throw new ForbiddenException('Voce so pode excluir seus proprios registros de ponto');
+    }
 
     await this.workRepository.remove(work);
 
