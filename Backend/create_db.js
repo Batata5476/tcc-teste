@@ -1,12 +1,14 @@
+const path = require('node:path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { Client } = require('pg');
 
 async function createDb() {
   const client = new Client({
-    user: 'postgres',
-    host: 'localhost',
+    user: process.env.DB_USERNAME || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
     database: 'postgres',
-    password: '@batata5476',
-    port: 5432,
+    password: process.env.DB_PASSWORD,
+    port: Number(process.env.DB_PORT) || 5432,
   });
 
   try {

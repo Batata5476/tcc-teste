@@ -39,16 +39,16 @@ const humorOptions = {
     text: "Neutra",
   },
 
-  happy: {
-    id: 4,
-    image: require("../assets/happy.png"),
-    text: "Feliz",
-  },
-
   good: {
-    id: 5,
+    id: 4,
     image: require("../assets/good.png"),
     text: "Muito Feliz",
+  },
+
+  happy: {
+    id: 5,
+    image: require("../assets/happy.png"),
+    text: "Feliz",
   },
 };
 
@@ -69,14 +69,27 @@ export function Emotions() {
   const [subject, setSubject] = useState("");
   const [salvandoHumor, setSalvandoHumor] = useState(false);
 
-  // Carrega o humor já registrado hoje, se houver
+  // Carrega o humor já registrado hoje pelo próprio usuário logado, se houver
   useEffect(() => {
     const loadTodayHumor = async () => {
       try {
-        const res = await authenticatedFetch("/wellbeing");
+        const [userRes, res] = await Promise.all([
+          authenticatedFetch("/dashboard/user").catch(() => null),
+          authenticatedFetch("/wellbeing"),
+        ]);
+
+        let myId: number | null = null;
+        if (userRes && userRes.ok) {
+          const userBody = await userRes.json().catch(() => ({}));
+          myId = userBody.data?.id ?? null;
+        }
+
         if (res.ok) {
           const body = await res.json();
-          const humores = body.data || [];
+          const allHumores = body.data || [];
+          const humores = myId
+            ? allHumores.filter((h: any) => !h.fk_id_func || h.fk_id_func === myId)
+            : allHumores;
           if (humores.length > 0) {
             const ultimo = humores[0];
             const dataUltimo = new Date(ultimo.dth_humor);
@@ -408,6 +421,10 @@ const styles = StyleSheet.create({
 
   actionsContainer: {
     marginTop: 20,
+    marginHorizontal: 20,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
 });
 

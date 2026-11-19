@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,11 @@ import { useRouter } from "expo-router";
 import { authenticatedFetch } from "../services/api";
 import FeedbackModal from "../components/common/FeedbackModal";
 
+type SectorOption = {
+  id: number;
+  nome: string;
+};
+
 export default function CadastroFuncionario() {
   const router = useRouter();
 
@@ -22,8 +27,55 @@ export default function CadastroFuncionario() {
   const [email, setEmail] = useState("");
   const [cargo, setCargo] = useState("");
   const [setorId, setSetorId] = useState("");
+  const [sectors, setSectors] = useState<SectorOption[]>([]);
+  const [newSectorName, setNewSectorName] = useState("");
+  const [creatingSector, setCreatingSector] = useState(false);
   const [roleName, setRoleName] = useState("Funcionário"); // 'Funcionário' ou 'Administrador'
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loadSectors = async () => {
+      try {
+        const res = await authenticatedFetch("/company/sectors");
+        if (res.ok) {
+          const body = await res.json();
+          const list: SectorOption[] = body.data ?? [];
+          setSectors(list);
+          if (list.length > 0) {
+            setSetorId(String(list[0].id));
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao carregar setores:", err);
+      }
+    };
+    loadSectors();
+  }, []);
+
+  const handleAddSector = async () => {
+    if (!newSectorName.trim() || creatingSector) return;
+    try {
+      setCreatingSector(true);
+      const res = await authenticatedFetch("/company/sectors", {
+        method: "POST",
+        body: JSON.stringify({ nome: newSectorName.trim() }),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        const created: SectorOption = body.data;
+        setSectors((prev) => {
+          const exists = prev.some((s) => s.id === created.id);
+          return exists ? prev : [...prev, created];
+        });
+        setSetorId(String(created.id));
+        setNewSectorName("");
+      }
+    } catch (err) {
+      console.error("Erro ao criar setor:", err);
+    } finally {
+      setCreatingSector(false);
+    }
+  };
 
   // Estado do FeedbackModal
   const [feedback, setFeedback] = useState<{
@@ -83,12 +135,12 @@ export default function CadastroFuncionario() {
           details: codeDetails,
         });
 
-        // Limpar formulário
+        // Limpar formulário mantendo o setor padrão selecionado
         setNome("");
         setCpf("");
         setEmail("");
         setCargo("");
-        setSetorId("");
+        setSetorId(sectors[0] ? String(sectors[0].id) : "");
       } else {
         setFeedback({
           visible: true,
@@ -169,14 +221,58 @@ export default function CadastroFuncionario() {
           onChangeText={setCargo}
         />
 
-        <Text style={styles.label}>ID do Setor (Número) *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ex: 95"
-          keyboardType="numeric"
-          value={setorId}
-          onChangeText={setSetorId}
-        />
+        <Text style={styles.label}>Setor *</Text>
+        {sectors.length > 0 ? (
+          <View style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              {sectors.map((sec) => {
+                const selected = setorId === String(sec.id);
+                return (
+                  <TouchableOpacity
+                    key={sec.id}
+                    onPress={() => setSetorId(String(sec.id))}
+                    style={[
+                      styles.roleBtn,
+                      { flexGrow: 0, flexShrink: 0, flexBasis: "auto", paddingHorizontal: 16, paddingVertical: 9 },
+                      selected && styles.roleBtnActive,
+                    ]}
+                  >
+                    <Text style={[styles.roleText, selected && styles.roleTextActive]}>
+                      {sec.nome}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0, paddingVertical: 9 }]}
+                placeholder="Novo setor (opcional)"
+                value={newSectorName}
+                onChangeText={setNewSectorName}
+              />
+              <TouchableOpacity
+                onPress={handleAddSector}
+                disabled={creatingSector || !newSectorName.trim()}
+                style={[
+                  styles.button,
+                  { paddingHorizontal: 14, paddingVertical: 10 },
+                  (!newSectorName.trim() || creatingSector) && styles.disabled,
+                ]}
+              >
+                <Text style={styles.buttonText}>{creatingSector ? "..." : "+ Criar"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TextInput
+            style={styles.input}
+            placeholder="ID do Setor"
+            keyboardType="numeric"
+            value={setorId}
+            onChangeText={setSetorId}
+          />
+        )}
 
         <Text style={styles.label}>Tipo de Perfil *</Text>
         <View style={styles.roleContainer}>
@@ -214,9 +310,15 @@ export default function CadastroFuncionario() {
 
       <TouchableOpacity
         style={styles.secondaryButton}
-        onPress={() => router.replace("/dashboard")}
+        onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace("/gestaoFuncionarios");
+          }
+        }}
       >
-        <Text style={styles.secondaryButtonText}>Voltar ao Dashboard</Text>
+        <Text style={styles.secondaryButtonText}>Voltar</Text>
       </TouchableOpacity>
 
 </View>

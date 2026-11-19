@@ -324,8 +324,6 @@ export class ChatService {
     if (forEveryone) {
       message.conteudo_mensagens = '🚫 Esta mensagem foi apagada';
       await this.messageRepository.save(message);
-    } else {
-      await this.messageRepository.remove(message);
     }
 
     return {
@@ -340,20 +338,34 @@ export class ChatService {
       throw new BadRequestException('Arquivo inválido ou base64 não fornecido');
     }
 
+    const ALLOWED_EXTENSIONS = new Set([
+      '.jpg', '.jpeg', '.png', '.webp', '.gif',
+      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.mp4',
+    ]);
+
+    const extMatch = dto.filename.match(/\.([a-zA-Z0-9]+)$/);
+    const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : '.jpg';
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException('Formato de arquivo não permitido por segurança');
+    }
+
     const uploadDir = join(process.cwd(), 'uploads', 'chat');
     if (!existsSync(uploadDir)) {
       mkdirSync(uploadDir, { recursive: true });
     }
 
     // Limpa prefixos do tipo 'data:image/...;base64,' se presentes
-    const base64Data = dto.base64.replace(/^data:([A-Za-z-+/]+);base64,/, '');
+    const base64Data = dto.base64.replace(/^data:([A-Za-z0-9.+/-]+);base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
 
-    const extMatch = dto.filename.match(/\.([a-zA-Z0-9]+)$/);
-    const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : '.jpg';
+    const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB
+    if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException('Arquivo vazio ou excede o limite máximo de 5MB');
+    }
+
     const safeName = `chat-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
     const filePath = join(uploadDir, safeName);
 
-    const buffer = Buffer.from(base64Data, 'base64');
     writeFileSync(filePath, buffer);
 
     return {

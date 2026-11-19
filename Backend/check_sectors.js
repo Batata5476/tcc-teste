@@ -1,12 +1,14 @@
+const path = require('node:path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { Client } = require('pg');
 
 async function checkSectors() {
   const client = new Client({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'COOPERA',
-    password: '@batata5476',
-    port: 5432,
+    user: process.env.DB_USERNAME || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_DATABASE || 'COOPERA',
+    password: process.env.DB_PASSWORD,
+    port: Number(process.env.DB_PORT) || 5432,
   });
 
   try {

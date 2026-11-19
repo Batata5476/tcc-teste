@@ -3,22 +3,76 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Company } from './entities/company.entity';
+import { Setor } from './entities/setor.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 import { User } from '../users/entities/user.entity';
 import { Role } from '../users/entities/role.entity';
 import { ROLES } from '../auth/authorization.constants';
+
+const DEFAULT_COMPANY_SECTORS = [
+  'Administrativo',
+  'Operacional',
+  'Tecnologia',
+  'Recursos Humanos',
+  'Comercial',
+];
 
 @Injectable()
 export class CompanyService {
   constructor(
     @InjectRepository(Company)
     private companyRepository: Repository<Company>,
+    @InjectRepository(Setor)
+    private setorRepository: Repository<Setor>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     @InjectRepository(Role)
     private roleRepository: Repository<Role>,
     private dataSource: DataSource,
   ) {}
+
+  async findSectors(empresaId: number) {
+    let sectors = await this.setorRepository.find({
+      where: { empresa_id: empresaId },
+      order: { id: 'ASC' },
+    });
+
+    if (sectors.length === 0) {
+      const defaults = DEFAULT_COMPANY_SECTORS.map((nome) =>
+        this.setorRepository.create({ empresa_id: empresaId, nome }),
+      );
+      sectors = await this.setorRepository.save(defaults);
+    }
+
+    return {
+      status: 'success',
+      data: sectors,
+    };
+  }
+
+  async createSector(empresaId: number, nome: string) {
+    const cleanNome = nome.trim();
+    const existing = await this.setorRepository.findOne({
+      where: { empresa_id: empresaId, nome: cleanNome },
+    });
+    if (existing) {
+      return {
+        status: 'success',
+        message: 'Setor já existente',
+        data: existing,
+      };
+    }
+
+    const created = await this.setorRepository.save(
+      this.setorRepository.create({ empresa_id: empresaId, nome: cleanNome }),
+    );
+    return {
+      status: 'success',
+      message: 'Setor criado com sucesso',
+      data: created,
+    };
+  }
 
   async findAll(empresaId: number) {
     const companies = await this.companyRepository.find({
@@ -81,6 +135,14 @@ export class CompanyService {
 
     // Transação atômica para criação da empresa e do usuário Master
     const result = await this.dataSource.transaction(async (transactionalEntityManager) => {
+      // Verificar também se o e-mail já está em uso por algum usuário
+      const existingUserEmail = await this.userRepository.findOne({
+        where: { email: cleanEmail },
+      });
+      if (existingUserEmail) {
+        throw new ConflictException('Este e-mail já está em uso no sistema');
+      }
+
       const company = transactionalEntityManager.create(Company, {
         cnpj: cleanCnpj,
         nome: nome.trim(),
@@ -91,12 +153,21 @@ export class CompanyService {
       });
       const savedCompany = await transactionalEntityManager.save(Company, company);
 
+      const defaultSectors = DEFAULT_COMPANY_SECTORS.map((sectorName) =>
+        transactionalEntityManager.create(Setor, {
+          empresa_id: savedCompany.id,
+          nome: sectorName,
+        }),
+      );
+      const savedSectors = await transactionalEntityManager.save(Setor, defaultSectors);
+
       const hashedPassword = await bcrypt.hash(senha_empresa, 10);
       const uniqueCpf = String(10000000000 + savedCompany.id);
 
       const masterUser = transactionalEntityManager.create(User, {
         empresa_id: savedCompany.id,
         role_id: adminRole.id,
+        setor_id: savedSectors[0]?.id ?? null,
         nome: `Admin ${savedCompany.nome}`,
         email: savedCompany.email,
         cpf: uniqueCpf,
@@ -117,7 +188,7 @@ export class CompanyService {
     };
   }
 
-  async update(id: number, updateCompanyDto: Partial<CreateCompanyDto>, empresaId: number) {
+  async update(id: number, updateCompanyDto: UpdateCompanyDto, empresaId: number) {
     await this.findOne(id, empresaId); // Verifica existência e permissão
     const cleanedDto: any = {};
     if (updateCompanyDto.nome !== undefined) cleanedDto.nome = updateCompanyDto.nome.trim();

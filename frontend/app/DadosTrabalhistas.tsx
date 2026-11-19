@@ -13,36 +13,56 @@ import { authenticatedFetch } from "../services/api";
 
 type WorkRecord = {
   pk_id_ponto: number;
+  fk_id_func?: number;
   data_ponto: string;
   entrada: string;
   saida: string;
   total_dia: string;
 };
 
+function formatDatePtBr(rawDate?: string): string {
+  if (!rawDate) return "--/--/----";
+  const match = String(rawDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return String(rawDate);
+  return parsed.toLocaleDateString("pt-BR");
+}
+
 export default function DadosTrabalhistas() {
   const router = useRouter();
-  const [agora, setAgora] = useState(new Date());
+  const [agora] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
   const [ultimoPonto, setUltimoPonto] = useState<WorkRecord | null>(null);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setAgora(new Date());
-    }, 1000);
-
     fetchPonto();
-
-    return () => clearInterval(timer);
   }, []);
 
   const fetchPonto = async () => {
     try {
       setLoading(true);
-      const res = await authenticatedFetch("/work");
+      const [userRes, res] = await Promise.all([
+        authenticatedFetch("/dashboard/user").catch(() => null),
+        authenticatedFetch("/work"),
+      ]);
+
+      let myId: number | null = null;
+      if (userRes && userRes.ok) {
+        const userBody = await userRes.json().catch(() => ({}));
+        myId = userBody.data?.id ?? null;
+      }
+
       if (res.ok) {
         const json = await res.json();
-        if (json.data && json.data.length > 0) {
-          setUltimoPonto(json.data[0]);
+        const records: WorkRecord[] = Array.isArray(json.data) ? json.data : [];
+        const ownRecords = myId
+          ? records.filter((r) => !r.fk_id_func || r.fk_id_func === myId)
+          : records;
+        if (ownRecords.length > 0) {
+          setUltimoPonto(ownRecords[0]);
         }
       }
     } catch (error) {
@@ -60,7 +80,13 @@ export default function DadosTrabalhistas() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/dashboard");
+            }
+          }}
         >
           <Ionicons name="arrow-back" size={22} color="#1C1B1F" />
         </TouchableOpacity>
@@ -86,7 +112,7 @@ export default function DadosTrabalhistas() {
           <Text style={styles.cardTitle}>carga horária</Text>
           <Text style={styles.cardSubtitle}>
             {ultimoPonto
-              ? `Último registro: ${new Date(ultimoPonto.data_ponto).toLocaleDateString("pt-BR")}`
+              ? `Último registro: ${formatDatePtBr(ultimoPonto.data_ponto)}`
               : "Sem registros de ponto hoje"}
           </Text>
         </View>

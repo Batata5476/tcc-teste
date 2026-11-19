@@ -55,7 +55,7 @@ export class MeetingsService {
         (meeting.solicitante && meeting.solicitante.empresa_id === caller.empresa_id) ||
         relations.some((r) => r.funcionario && r.funcionario.empresa_id === caller.empresa_id);
 
-      if (!belongsToCompany && meeting.solicitante_id !== null) {
+      if (!belongsToCompany) {
         throw new ForbiddenException('Esta reunião não pertence à sua empresa');
       }
     }

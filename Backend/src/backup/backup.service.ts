@@ -1,6 +1,6 @@
-import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -26,10 +26,10 @@ export class BackupService {
         }
     }
 
-    // Localiza o executável do PostgreSQL no Windows
+    // Localiza o executável do PostgreSQL no Windows sem interpolar aspas de shell
     private findPgBinary(binaryName: string): string {
         try {
-            execSync(`where ${binaryName}`, { stdio: 'ignore' });
+            execFileSync('where', [binaryName], { stdio: 'ignore' });
             return binaryName;
         } catch {
             // Procura nas pastas de instalação do PostgreSQL
@@ -41,12 +41,19 @@ export class BackupService {
             for (const v of versions) {
                 const candidate = path.join(baseDir, v, 'bin', `${binaryName}.exe`);
                 if (fs.existsSync(candidate)) {
-                    return `"${candidate}"`;
+                    return candidate;
                 }
             }
         }
 
         return binaryName;
+    }
+
+    private belongsToCompany(filename: string, empresaId: number): boolean {
+        return (
+            filename.includes(`_empresa${empresaId}_`) ||
+            filename.includes(`_empresa_${empresaId}_`)
+        );
     }
 
     // Formata o tamanho do arquivo para fácil leitura (ex: 250 KB)
@@ -59,7 +66,7 @@ export class BackupService {
     // 1. CRIAR BACKUP
     async createBackup(empresaId: number, userId: number): Promise<BackupItem> {
         const host = this.configService.get<string>('DB_HOST', 'localhost');
-        const port = this.configService.get<string>('DB_PORT', '5432');
+        const port = String(this.configService.get<string>('DB_PORT', '5432'));
         const user = this.configService.get<string>('DB_USERNAME', 'postgres');
         const password = this.configService.get<string>('DB_PASSWORD', '');
         const database = this.configService.get<string>('DB_DATABASE', 'COOPERA');
@@ -74,15 +81,17 @@ export class BackupService {
         const filename = `backup_${database}_empresa${empresaId}_${timestamp}.sql`;
         const outputPath = path.join(this.backupDir, filename);
 
-        this.logger.log(`Iniciando backup solicitado pelo usuário #${userId}...`);
+        this.logger.log(`Iniciando backup solicitado pelo usuário #${userId} (empresa #${empresaId})...`);
 
         try {
             const pgDumpCmd = this.findPgBinary('pg_dump');
             const env = { ...process.env, PGPASSWORD: password };
 
-            // Executa o dump do PostgreSQL
-            const command = `${pgDumpCmd} -h ${host} -p ${port} -U ${user} --clean --if-exists -F p -b -f "${outputPath}" "${database}"`;
-            execSync(command, { env, stdio: 'pipe' });
+            execFileSync(
+                pgDumpCmd,
+                ['-h', host, '-p', port, '-U', user, '--clean', '--if-exists', '-F', 'p', '-b', '-f', outputPath, database],
+                { env, stdio: 'pipe' },
+            );
 
             const stats = fs.statSync(outputPath);
             const item: BackupItem = {
@@ -101,7 +110,7 @@ export class BackupService {
         }
     }
 
-    // 2. LISTAR BACKUPS
+    // 2. LISTAR BACKUPS (isolado pela empresa autenticada)
     async listBackups(empresaId: number): Promise<BackupItem[]> {
         if (!fs.existsSync(this.backupDir)) {
             return [];
@@ -112,6 +121,8 @@ export class BackupService {
 
         for (const f of files) {
             if (!f.endsWith('.sql')) continue;
+            if (!this.belongsToCompany(f, empresaId)) continue;
+
             const fullPath = path.join(this.backupDir, f);
             const stats = fs.statSync(fullPath);
             const mtime = stats.mtime;
@@ -135,6 +146,14 @@ export class BackupService {
         }
 
         const safeFilename = path.basename(filename);
+        if (!safeFilename.endsWith('.sql') || !/^[a-zA-Z0-9._-]+$/.test(safeFilename)) {
+            throw new BadRequestException('Nome de arquivo de backup inválido.');
+        }
+
+        if (!this.belongsToCompany(safeFilename, empresaId)) {
+            throw new ForbiddenException('Este arquivo de backup não pertence à sua empresa.');
+        }
+
         const targetPath = path.join(this.backupDir, safeFilename);
 
         if (!fs.existsSync(targetPath)) {
@@ -142,20 +161,22 @@ export class BackupService {
         }
 
         const host = this.configService.get<string>('DB_HOST', 'localhost');
-        const port = this.configService.get<string>('DB_PORT', '5432');
+        const port = String(this.configService.get<string>('DB_PORT', '5432'));
         const user = this.configService.get<string>('DB_USERNAME', 'postgres');
         const password = this.configService.get<string>('DB_PASSWORD', '');
         const database = this.configService.get<string>('DB_DATABASE', 'COOPERA');
 
-        this.logger.warn(`RESTAURAÇÃO iniciada pelo usuário #${userId} com: ${safeFilename}`);
+        this.logger.warn(`RESTAURAÇÃO iniciada pelo usuário #${userId} (empresa #${empresaId}) com: ${safeFilename}`);
 
         try {
             const psqlCmd = this.findPgBinary('psql');
             const env = { ...process.env, PGPASSWORD: password };
 
-            // Executa a restauração com o psql
-            const command = `${psqlCmd} -h ${host} -p ${port} -U ${user} -d "${database}" -f "${targetPath}"`;
-            execSync(command, { env, stdio: 'pipe' });
+            execFileSync(
+                psqlCmd,
+                ['-h', host, '-p', port, '-U', user, '-d', database, '-f', targetPath],
+                { env, stdio: 'pipe' },
+            );
 
             this.logger.log(`Banco restaurado com sucesso a partir de ${safeFilename}`);
             return {

@@ -179,8 +179,8 @@ export class WorkService {
   }
 
   async update(id: number, updateDto: UpdateWorkDto, caller: any) {
-    if (!isEmployeeRole(caller.role)) {
-      throw new ForbiddenException(`Apenas funcionarios podem atualizar seus registros de ponto (perfil recebido: ${caller.role ?? 'nao informado'})`);
+    if (caller.role === ROLES.MASTER_ADMIN) {
+      throw new ForbiddenException(`Apenas colaboradores podem atualizar seus registros de ponto (perfil recebido: ${caller.role ?? 'nao informado'})`);
     }
 
     const work = await this.validateWorkAccess(id, caller);
@@ -218,8 +218,8 @@ export class WorkService {
   }
 
   async remove(id: number, caller: any) {
-    if (!isEmployeeRole(caller.role)) {
-      throw new ForbiddenException(`Apenas funcionarios podem excluir seus registros de ponto (perfil recebido: ${caller.role ?? 'nao informado'})`);
+    if (caller.role === ROLES.MASTER_ADMIN) {
+      throw new ForbiddenException(`Apenas colaboradores podem excluir seus registros de ponto (perfil recebido: ${caller.role ?? 'nao informado'})`);
     }
 
     const work = await this.validateWorkAccess(id, caller);

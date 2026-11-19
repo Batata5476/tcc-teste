@@ -27,12 +27,12 @@ import { BackupModule } from './backup/backup.module';
       isGlobal: true,
     }),
 
-    // Global rate limit: 30 requests per minute per IP address
+    // Global rate limit: 240 requests per minute per IP address (auth routes enforce stricter @Throttle)
     ThrottlerModule.forRoot({
       throttlers: [
         {
           ttl: 60000, // 1 minute
-          limit: 30, // Maximum of 30 requests in this period
+          limit: 240, // Maximum of 240 requests in this period
         },
       ],
     }),

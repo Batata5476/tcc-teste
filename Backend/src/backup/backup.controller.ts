@@ -3,11 +3,11 @@ import { BackupService, BackupItem } from './backup.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/authorization.decorators';
 import { RolesGuard } from '../auth/roles.guard';
-import { ADMIN_ROLES } from '../auth/authorization.constants';
+import { ROLES } from '../auth/authorization.constants';
 
 @Controller('backup')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(...ADMIN_ROLES)
+@Roles(ROLES.MASTER_ADMIN)
 
 export class BackupController {
     constructor(private readonly backupService: BackupService) { }

@@ -5,7 +5,7 @@ import { Message } from './entities/message.entity';
 import { Chat } from './entities/chat.entity';
 import { ChatParticipant } from './entities/chat-participant.entity';
 import { User } from '../users/entities/user.entity';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -25,6 +25,8 @@ describe('ChatService', () => {
       create: jest.fn((dto) => dto),
       save: jest.fn((entity) => Promise.resolve({ pk_id_mensagens: 1, ...entity })),
       find: jest.fn(),
+      findOne: jest.fn(),
+      remove: jest.fn(),
     };
 
     chatRepository = {
@@ -118,6 +120,33 @@ describe('ChatService', () => {
       expect(messageRepository.save).toHaveBeenCalled();
       expect(response.status).toBe('success');
       expect(response.data.conteudo_mensagens).toBe('Olá!');
+    });
+  });
+
+  describe('uploadMedia & remove security', () => {
+    it('rejects dangerous file extensions (.html, .svg, .js)', async () => {
+      await expect(
+        service.uploadMedia({ filename: 'exploit.html', base64: 'PGh0bWw+PC9odG1sPg==' }, mockCaller),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.uploadMedia({ filename: 'xss.svg', base64: 'PHN2Zz48L3N2Zz4=' }, mockCaller),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('does not delete message from DB for everyone when forEveryone is false', async () => {
+      messageRepository.findOne.mockResolvedValue({
+        pk_id_mensagens: 42,
+        fk_id_chat: 5,
+        fk_id_func: 10,
+        conteudo_mensagens: 'Mensagem privada',
+      });
+      chatRepository.findOne.mockResolvedValue({ pk_id_chat: 5, fk_cod_empresa: 1 });
+      chatParticipantRepository.findOne.mockResolvedValue({ fk_id_chat: 5, fk_id_func: 10 });
+
+      const res = await service.remove(42, mockCaller, false);
+      expect(res.status).toBe('success');
+      expect(messageRepository.remove).not.toHaveBeenCalled();
     });
   });
 });

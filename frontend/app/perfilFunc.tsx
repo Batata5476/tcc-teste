@@ -178,50 +178,58 @@ export default function PerfilFunc() {
               </View>
             </View>
 
-            {/* AÇÕES E RECURSOS */}
-            <Text style={styles.sectionTitle}>ferramentas & recursos</Text>
+            {/* AÇÕES E RECURSOS - ESTILO MODERNO DE CARDS */}
+            <View style={styles.sectionHeaderWrapper}>
+              <Text style={styles.sectionCategory}>ÁREA DO COLABORADOR</Text>
+              <Text style={styles.sectionHeaderTitle}>Ferramentas e recursos</Text>
+              <Text style={styles.sectionHeaderSubtitle}>
+                Acesse rapidamente seus recursos e informações.
+              </Text>
+            </View>
 
-            <PerfilAction
-              icon="calendar-outline"
-              text="solicitar reunião"
-              onPress={() => setMeetingOpen(true)}
-              showAdd={false}
-            />
+            <View style={styles.gridContainer}>
+              <PerfilAction
+                icon="calendar-outline"
+                title="Solicitar reunião"
+                subtitle="Agende um horário"
+                onPress={() => setMeetingOpen(true)}
+              />
 
-            <PerfilAction
-              icon="wallet-outline"
-              text="dados trabalhistas"
-              onPress={() => router.push("/DadosTrabalhistas")}
-              showAdd={false}
-            />
+              <PerfilAction
+                icon="briefcase-outline"
+                title="Dados trabalhistas"
+                subtitle="Consulte seus dados"
+                onPress={() => router.push("/DadosTrabalhistas")}
+              />
 
-            <PerfilAction
-              icon="trophy-outline"
-              text="sistema de pontuações"
-              onPress={() => setPointsOpen(true)}
-              showAdd={false}
-            />
+              <PerfilAction
+                icon="trophy-outline"
+                title="Sistema de pontuações"
+                subtitle="Acompanhe seus pontos"
+                onPress={() => setPointsOpen(true)}
+              />
 
-            <PerfilAction
-              icon="medkit-outline"
-              text="histórico médico e ausências"
-              onPress={() => setMedicalOpen(true)}
-              showAdd={false}
-            />
+              <PerfilAction
+                icon="medkit-outline"
+                title="Histórico médico"
+                subtitle="Saúde e ausências"
+                onPress={() => setMedicalOpen(true)}
+              />
 
-            <PerfilAction
-              icon="happy-outline"
-              text="registro de humor & bem-estar"
-              onPress={() => router.push("/bemEstar")}
-              showAdd={false}
-            />
+              <PerfilAction
+                icon="heart-outline"
+                title="Humor e bem-estar"
+                subtitle="Registre como se sente"
+                onPress={() => router.push("/bemEstar")}
+              />
 
-            <PerfilAction
-              icon="checkbox-outline"
-              text="ver minhas tarefas"
-              onPress={() => router.push("/dashboard")}
-              showAdd={false}
-            />
+              <PerfilAction
+                icon="list-outline"
+                title="Minhas tarefas"
+                subtitle="Veja suas pendências"
+                onPress={() => router.push("/dashboard")}
+              />
+            </View>
           </>
         )}
 
@@ -257,9 +265,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 40,
+    width: "100%",
   },
   title: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 6,
     marginBottom: 12,
     fontSize: 20,
@@ -267,7 +276,7 @@ const styles = StyleSheet.create({
     color: "#285A71",
   },
   nameHeaderCard: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 4,
     alignItems: "center",
   },
@@ -305,7 +314,7 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: "row",
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginVertical: 12,
     gap: 10,
   },
@@ -331,14 +340,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: "500",
   },
-  sectionTitle: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 10,
-    fontSize: 13,
-    color: "#285A71",
+  sectionHeaderWrapper: {
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 14,
+  },
+  sectionCategory: {
+    fontSize: 11,
     fontWeight: "700",
+    color: "#285A71",
+    letterSpacing: 0.8,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  sectionHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#285A71",
+    marginBottom: 3,
+  },
+  sectionHeaderSubtitle: {
+    fontSize: 12.5,
+    color: "#64748B",
+    fontWeight: "400",
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginHorizontal: 16,
   },
 });

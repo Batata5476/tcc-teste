@@ -6,7 +6,7 @@ import { Occurrence } from './entities/occurrence.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateOccurrenceDto } from './dto/create-occurrence.dto';
 import { UpdateOccurrenceDto } from './dto/update-occurrence.dto';
-import { isAdminRole, ROLES } from '../auth/authorization.constants';
+import { isAdminRole, isEmployeeRole } from '../auth/authorization.constants';
 
 @Injectable()
 export class OccurrencesService {
@@ -30,7 +30,7 @@ export class OccurrencesService {
       throw new NotFoundException(`Registro médico com ID ${occurrenceId} não encontrado`);
     }
 
-if (caller.role === ROLES.EMPLOYEE) {
+if (isEmployeeRole(caller.role)) {
   if (occurrence.fk_id_func !== callerId) {
     throw new ForbiddenException(
       'Você não possui acesso a este registro médico',
@@ -70,7 +70,7 @@ return occurrence;
         throw new ForbiddenException('Colaborador não pertence à sua empresa');
       }
       targetFuncId = createOccurrenceDto.fk_id_func;
-    } else if (caller.role !== ROLES.EMPLOYEE) {
+    } else if (!isEmployeeRole(caller.role)) {
       throw new ForbiddenException('Você não possui permissão para registrar ocorrências');
     }
 
@@ -94,7 +94,7 @@ return occurrence;
     const isCompanyAdmin =
       isAdminRole(caller.role);
 
-    if (caller.role === ROLES.EMPLOYEE) {
+    if (isEmployeeRole(caller.role)) {
       const occurrences = await this.occurrenceRepository.find({
         where: { fk_id_func: callerId },
         order: { pk_id_his_medico: 'DESC' },
@@ -144,8 +144,8 @@ return occurrence;
   }
 
   async update(id: number, updateDto: UpdateOccurrenceDto, caller: any) {
-    if (caller.role !== ROLES.EMPLOYEE) {
-      throw new ForbiddenException('Apenas funcionários podem atualizar seus registros médicos');
+    if (!isEmployeeRole(caller.role) && !isAdminRole(caller.role)) {
+      throw new ForbiddenException('Você não possui permissão para atualizar registros médicos');
     }
 
     const occurrence = await this.validateOccurrenceAccess(id, caller);
@@ -167,8 +167,8 @@ return occurrence;
   }
 
   async remove(id: number, caller: any) {
-    if (caller.role !== ROLES.EMPLOYEE) {
-      throw new ForbiddenException('Apenas funcionários podem excluir seus registros médicos');
+    if (!isEmployeeRole(caller.role) && !isAdminRole(caller.role)) {
+      throw new ForbiddenException('Você não possui permissão para excluir registros médicos');
     }
 
     const occurrence = await this.validateOccurrenceAccess(id, caller);

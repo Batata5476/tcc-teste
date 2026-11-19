@@ -20,6 +20,7 @@ export class TasksController {
   }
 
   @Get('company-tasks')
+  @Roles(...ADMIN_ROLES)
   @Permissions('tasks.read')
   async findCompanyTasks(@Req() req) {
     // Para empresas / administradores

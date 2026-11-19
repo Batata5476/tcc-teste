@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet, Text, View, } from "react-native";
+import { ActivityIndicator, Alert, Platform, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -58,10 +58,16 @@ export default function PerfilAdm() {
         setUser(body.data);
       }
 
-      const tasksRes = await authenticatedFetch("/tasks/my-tasks");
+      const tasksRes = await authenticatedFetch("/tasks/company-tasks");
       if (tasksRes.ok) {
         const tasksBody = await tasksRes.json();
         setTasks(tasksBody.data ?? []);
+      } else {
+        const fallbackRes = await authenticatedFetch("/tasks/my-tasks");
+        if (fallbackRes.ok) {
+          const fallbackBody = await fallbackRes.json();
+          setTasks(fallbackBody.data ?? []);
+        }
       }
 
 
@@ -135,49 +141,84 @@ export default function PerfilAdm() {
     }
   };
 
-  // Função para salvar a localização da empresa com latitudo e longitude atuais do GPS do dispositivo
+  // Função para salvar a localização da empresa com latitude e longitude atuais do GPS do dispositivo
   const handleSaveCompanyLocation = async () => {
     if (savingCompanyLocation) return;
 
     if (!companyLocation?.id) {
-      Alert.alert("Empresa não encontrada", "Recarregue o perfil e tente novamente.");
+      const msg = "Empresa não encontrada. Recarregue a página e tente novamente.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Empresa não encontrada", msg);
+      }
       return;
     }
 
     setSavingCompanyLocation(true);
-    // Solicita a permissão de localização e obtém a posição atual do dispositivo
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        throw new Error("Permita o acesso à localização para continuar.");
+      let latitude: number | null = null;
+      let longitude: number | null = null;
+
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+        // Fallback nativo do navegador para geolocalização precisa
+        const pos: any = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+          });
+        }).catch((err) => {
+          throw new Error(
+            err.code === 1
+              ? "Permissão de localização negada no navegador. Permita o acesso ao GPS na barra de endereços."
+              : "Não foi possível obter as coordenadas GPS pelo navegador."
+          );
+        });
+        latitude = pos.coords.latitude;
+        longitude = pos.coords.longitude;
+      } else {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (!permission.granted) {
+          throw new Error("Permita o acesso à localização para continuar.");
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
       }
 
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      if (latitude !== null && longitude !== null) {
+        const response = await authenticatedFetch(`/company/${companyLocation.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            latitude,
+            longitude,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
 
-      // Envia a latitude e longitutde atuais para o Backend para atualizar a localização da empresa no banco de dados
-      const response = await authenticatedFetch(`/company/${companyLocation.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(body.message || "Não foi possível salvar a localização.");
+        }
 
-      if (!response.ok) {
-        throw new Error(body.message || "Não foi possível salvar a localização.");
+        // Atualiza o estado local com a Localização
+        setCompanyLocation(body.data);
+        const successMsg = "A localização da sede foi atualizada com sucesso!";
+        if (Platform.OS === "web") {
+          window.alert(successMsg);
+        } else {
+          Alert.alert("Localização salva", successMsg);
+        }
       }
-
-      // Atualiza o estado local com a Localização
-      setCompanyLocation(body.data);
-      Alert.alert("Localização salva", "A localização da empresa foi atualizada.");
     } catch (error) {
-      Alert.alert(
-        "Erro",
-        error instanceof Error ? error.message : "Não foi possível obter o GPS.",
-      );
+      const errorMsg = error instanceof Error ? error.message : "Não foi possível obter o GPS.";
+      if (Platform.OS === "web") {
+        window.alert(`Erro: ${errorMsg}`);
+      } else {
+        Alert.alert("Erro", errorMsg);
+      }
     } finally {
       setSavingCompanyLocation(false);
     }
@@ -233,77 +274,86 @@ export default function PerfilAdm() {
         {/* GRÁFICO DE EMOÇÕES DA EQUIPE (totais agregados) */}
         <EmotionsPieChartCard />
 
-        {/* FERRAMENTAS DO COLABORADOR */}
-        <Text style={styles.sectionTitle}>ferramentas & gestão</Text>
+        {/* SEÇÃO DE FERRAMENTAS & GESTÃO DA EMPRESA */}
+        <View style={styles.sectionHeaderWrapper}>
+          <Text style={styles.sectionCategory}>ÁREA ADMINISTRATIVA</Text>
+          <Text style={styles.sectionHeaderTitle}>Ferramentas e recursos</Text>
+          <Text style={styles.sectionHeaderSubtitle}>
+            Acesse rapidamente as ferramentas de gestão e recursos da empresa.
+          </Text>
+        </View>
 
-        {/* Botão para definir a localização da empresa */}
-        <PerfilAction
-          icon="location-outline"
-          text={savingCompanyLocation ? "salvando localização..." : "definir localização da empresa"}
-          onPress={handleSaveCompanyLocation}
-          showAdd={false}
-        />
-        <Text style={styles.locationHint}>
-          {companyLocationIsSet
-            ? `Local salvo: ${Number(companyLocation?.latitude).toFixed(5)}, ${Number(companyLocation?.longitude).toFixed(5)}`
-            : "Defina o local presencialmente na empresa. O ponto aceita até 50 metros de distância."}
-        </Text>
+        <View style={styles.gridContainer}>
+          <PerfilAction
+            icon="location-outline"
+            title="Localização da empresa"
+            subtitle={
+              savingCompanyLocation
+                ? "Salvando GPS..."
+                : companyLocationIsSet
+                ? `GPS Salvo (${Number(companyLocation?.latitude).toFixed(3)}, ${Number(companyLocation?.longitude).toFixed(3)})`
+                : "Definir sede para ponto (50m)"
+            }
+            badge={companyLocationIsSet ? "Ativo" : undefined}
+            onPress={handleSaveCompanyLocation}
+          />
 
-        <PerfilAction
-          icon="calendar-outline"
-          text="solicitar reunião"
-          onPress={() => setMeetingOpen(true)}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="calendar-outline"
+            title="Solicitar reunião"
+            subtitle="Agende um horário"
+            onPress={() => setMeetingOpen(true)}
+          />
 
-        <PerfilAction
-          icon="wallet-outline"
-          text="salário e banco de horas"
-          onPress={() => router.push("/DadosTrabalhistas")}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="briefcase-outline"
+            title="Dados trabalhistas"
+            subtitle="Salário e banco de horas"
+            onPress={() => router.push("/DadosTrabalhistas")}
+          />
 
-        <PerfilAction
-          icon="trophy-outline"
-          text="sistema de pontuações"
-          onPress={() => setPointsOpen(true)}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="trophy-outline"
+            title="Sistema de pontuações"
+            subtitle="Metas e pontuação da equipe"
+            onPress={() => setPointsOpen(true)}
+          />
 
-        <PerfilAction
-          icon="medkit-outline"
-          text="histórico médico e ausências"
-          onPress={() => setMedicalOpen(true)}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="medkit-outline"
+            title="Histórico médico"
+            subtitle="Saúde e atestados da equipe"
+            onPress={() => setMedicalOpen(true)}
+          />
 
-        <PerfilAction
-          icon="person-add-outline"
-          text="cadastro de funcionário"
-          onPress={() => router.push("/cadastroFuncionario")}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="person-add-outline"
+            title="Cadastro de equipe"
+            subtitle="Admissão de colaborador"
+            onPress={() => router.push("/cadastroFuncionario")}
+          />
 
-        <PerfilAction
-          icon="people-outline"
-          text="gestão de funcionários"
-          onPress={() => router.push("/gestaoFuncionarios")}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="people-outline"
+            title="Gestão da equipe"
+            subtitle="Colaboradores e cargos"
+            onPress={() => router.push("/gestaoFuncionarios")}
+          />
 
-        <PerfilAction
-          icon="happy-outline"
-          text="registro de humor & bem-estar"
-          onPress={() => router.push("/bemEstar")}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="heart-outline"
+            title="Humor e bem-estar"
+            subtitle="Clima organizacional"
+            onPress={() => router.push("/bemEstar")}
+          />
 
-        <PerfilAction
-          icon="cloud-upload-outline"
-          text="backup e restauração da empresa"
-          onPress={() => setBackupOpen(true)}
-          showAdd={false}
-        />
+          <PerfilAction
+            icon="cloud-upload-outline"
+            title="Backup da empresa"
+            subtitle="Segurança e restauração"
+            onPress={() => setBackupOpen(true)}
+          />
+        </View>
       </ScrollView>
 
       {/* Modais */}
@@ -317,6 +367,7 @@ export default function PerfilAdm() {
       <PerfilMedicalModal
         visible={medicalOpen}
         onClose={() => setMedicalOpen(false)}
+        isAdmin={true}
       />
 
       <PerfilPointsModal
@@ -340,9 +391,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 40,
+    width: "100%",
   },
   title: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 6,
     marginBottom: 12,
     fontSize: 20,
@@ -350,7 +402,7 @@ const styles = StyleSheet.create({
     color: "#285A71",
   },
   nameHeaderCard: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 4,
     alignItems: "center",
   },
@@ -365,21 +417,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: "500",
   },
-  sectionTitle: {
-    marginHorizontal: 20,
+  sectionHeaderWrapper: {
+    marginHorizontal: 16,
     marginTop: 22,
-    marginBottom: 10,
-    fontSize: 13,
-    color: "#285A71",
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  locationHint: {
-    marginHorizontal: 24,
-    marginTop: -4,
     marginBottom: 14,
-    fontSize: 12,
+  },
+  sectionCategory: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#285A71",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  sectionHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#285A71",
+    marginBottom: 3,
+  },
+  sectionHeaderSubtitle: {
+    fontSize: 12.5,
     color: "#64748B",
+    fontWeight: "400",
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginHorizontal: 16,
   },
 });

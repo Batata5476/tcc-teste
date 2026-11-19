@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { randomInt, randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
 import { Role } from './entities/role.entity';
@@ -9,7 +10,7 @@ import { Permission } from './entities/permission.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuditService } from '../audit/audit.service';
-import { isAdminRole } from '../auth/authorization.constants';
+import { isAdminRole, ROLES } from '../auth/authorization.constants';
 import { MailService } from '../mail/mail.services';
 
 
@@ -33,7 +34,7 @@ export class UsersService {
     let code = '';
     for (let i = 0; i < 8; i++) {
       if (i === 4) code += '-';
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+      code += chars.charAt(randomInt(0, chars.length));
     }
     return code;
   }
@@ -118,23 +119,35 @@ export class UsersService {
       throw new ForbiddenException('Você não possui permissão para cadastrar funcionários');
     }
 
+    if (createUserDto.role_name === ROLES.MASTER_ADMIN && caller.role !== ROLES.MASTER_ADMIN) {
+      throw new ForbiddenException('Apenas o Administrador Master pode atribuir este perfil');
+    }
+
     const cleanCpf = createUserDto.cpf.replace(/\D/g, '');
     const cleanEmail = createUserDto.email.trim().toLowerCase();
 
-    // Verificar se o CPF já está em uso por um usuário ativo
+    // Verificar se o CPF já está em uso (incluindo registros arquivados para evitar violação de UNIQUE)
     const existingCpf = await this.usersRepository.findOne({
       where: { cpf: cleanCpf },
     });
-    if (existingCpf && existingCpf.status !== 'DELETED') {
-      throw new BadRequestException('CPF já cadastrado');
+    if (existingCpf) {
+      throw new ConflictException(
+        existingCpf.status === 'DELETED'
+          ? 'CPF pertence a um colaborador removido anteriormente'
+          : 'CPF já cadastrado',
+      );
     }
 
-    // Verificar se o Email já está em uso por um usuário ativo
+    // Verificar se o Email já está em uso (incluindo registros arquivados)
     const existingEmail = await this.usersRepository.findOne({
       where: { email: cleanEmail },
     });
-    if (existingEmail && existingEmail.status !== 'DELETED') {
-      throw new BadRequestException('E-mail já cadastrado');
+    if (existingEmail) {
+      throw new ConflictException(
+        existingEmail.status === 'DELETED'
+          ? 'E-mail pertence a um colaborador removido anteriormente'
+          : 'E-mail já cadastrado',
+      );
     }
 
     // Buscar Role pelo nome
@@ -167,7 +180,7 @@ export class UsersService {
     }
 
     // Senha temporária aleatória e grande (será redefinida no primeiro acesso)
-    const dummyPassword = await bcrypt.hash(Math.random().toString(36), 10);
+    const dummyPassword = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
 
     const user = this.usersRepository.create({
       nome: createUserDto.nome.trim(),
@@ -253,6 +266,9 @@ export class UsersService {
     // Administrador atualizando dados sensíveis
     if (isCompanyAdmin) {
       if (updateUserDto.status !== undefined) {
+        if (targetUser.id === caller.sub && updateUserDto.status !== 'ACTIVE') {
+          throw new BadRequestException('Você não pode desativar ou bloquear sua própria conta');
+        }
         targetUser.status = updateUserDto.status;
       }
 
@@ -267,6 +283,9 @@ export class UsersService {
       }
 
       if (updateUserDto.role_name !== undefined) {
+        if (updateUserDto.role_name === ROLES.MASTER_ADMIN && caller.role !== ROLES.MASTER_ADMIN) {
+          throw new ForbiddenException('Apenas o Administrador Master pode atribuir este perfil');
+        }
         const role = await this.roleRepository.findOne({
           where: { nome: updateUserDto.role_name },
         });
@@ -308,6 +327,10 @@ export class UsersService {
 
     if (!isCompanyAdmin) {
       throw new ForbiddenException('Apenas administradores podem remover funcionários');
+    }
+
+    if (id === caller.sub) {
+      throw new BadRequestException('Você não pode remover sua própria conta');
     }
 
     const user = await this.validateUserAccess(id, caller);

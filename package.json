@@ -1,0 +1,12 @@
+{
+  "name": "atcc-workspace",
+  "private": true,
+  "scripts": {
+    "setup": "npm ci --prefix Backend && npm ci --prefix frontend",
+    "db:setup": "npm run db:setup --prefix Backend",
+    "check": "npm run build --prefix Backend && npm test --prefix Backend -- --runInBand && npm run typecheck --prefix frontend",
+    "backend": "npm run start:dev --prefix Backend",
+    "frontend": "npm run start --prefix frontend",
+    "web": "npm run web --prefix frontend"
+  }
+}

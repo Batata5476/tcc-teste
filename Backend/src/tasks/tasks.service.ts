@@ -84,7 +84,6 @@ export class TasksService {
     // 1. Cria a tarefa
     // Normaliza a data: trata string YYYY-MM-DD como data LOCAL para evitar
     // conversão UTC que deslocaria o dia (ex: '2026-08-30' → 29T03:00Z em UTC-3)
-    console.log('[DEBUG TasksService] data.validade_tarefa recebida:', data.validade_tarefa, 'tipo:', typeof data.validade_tarefa);
     let validadeNormalizada: string;
     if (typeof data.validade_tarefa === 'string') {
       const match = data.validade_tarefa.match(/^(\d{4}-\d{2}-\d{2})/);

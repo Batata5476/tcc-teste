@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS reuniao (
     data_reuniao DATE NOT NULL,
     horario_reuniao TIME NOT NULL,
     assunto_reuniao VARCHAR(100) NOT NULL,
+    link_reuniao TEXT,
     tipo_reuniao VARCHAR(30) NOT NULL,
     status_reuniao VARCHAR(20) NOT NULL DEFAULT 'AGENDADA',
     solicitante_id INT REFERENCES usuario(id) ON DELETE SET NULL,
@@ -118,7 +119,7 @@ CREATE TABLE IF NOT EXISTS humor_func (
 CREATE TABLE IF NOT EXISTS his_medico (
     pk_id_his_medico SERIAL PRIMARY KEY,
     atestado_func TEXT,
-    ocorrencias VARCHAR(50),
+    ocorrencias VARCHAR(255),
     fk_id_func INT NOT NULL REFERENCES usuario(id) ON DELETE CASCADE
 );
 

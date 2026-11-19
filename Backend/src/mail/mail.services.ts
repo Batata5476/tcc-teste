@@ -51,14 +51,24 @@ export class MailService {
     }
   }
 
+  private escapeHtml(str: string): string {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   /**
    * Template de Primeiro Acesso (novo funcionário)
    */
   async sendFirstAccessEmail(toEmail: string, userName: string, activationCode: string, rawToken: string) {
+    const safeName = this.escapeHtml(userName);
     const subject = 'Ativação de Conta - Sistema Coopera';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 550px; margin: auto; padding: 25px; border: 1px solid #ddd; border-radius: 8px;">
-        <h2 style="color: #285A71;">Bem-vindo(a), ${userName}!</h2>
+        <h2 style="color: #285A71;">Bem-vindo(a), ${safeName}!</h2>
         <p>Sua conta foi criada no <strong>Coopera</strong>. Para realizar o seu primeiro acesso e cadastrar sua senha, utilize os dados abaixo no aplicativo:</p>
 
         <div style="background-color: #f3f6f8; padding: 15px; border-radius: 6px; margin: 20px 0;">
@@ -77,11 +87,12 @@ export class MailService {
    * Template de Recuperação de Senha
    */
   async sendPasswordResetEmail(toEmail: string, userName: string, activationCode: string, rawToken: string) {
+    const safeName = this.escapeHtml(userName);
     const subject = 'Recuperação de Senha - Sistema Coopera';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 550px; margin: auto; padding: 25px; border: 1px solid #ddd; border-radius: 8px;">
         <h2 style="color: #285A71;">Redefinição de Senha</h2>
-        <p>Olá, ${userName}. Foi solicitada a redefinição da sua senha no <strong>Coopera</strong>.</p>
+        <p>Olá, ${safeName}. Foi solicitada a redefinição da sua senha no <strong>Coopera</strong>.</p>
         <p>Informe os dados abaixo na tela de redefinição do aplicativo:</p>
 
         <div style="background-color: #f3f6f8; padding: 15px; border-radius: 6px; margin: 20px 0;">

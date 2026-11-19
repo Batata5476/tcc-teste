@@ -7,6 +7,6 @@ export class UpdateOccurrenceDto {
 
   @IsOptional()
   @IsString()
-  @Length(1, 50)
+  @Length(1, 255)
   ocorrencias?: string;
 }

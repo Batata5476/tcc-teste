@@ -97,4 +97,30 @@ describe('WorkService geolocation', () => {
 
     expect(workRepository.save).not.toHaveBeenCalled();
   });
+
+  it('allows admin employee to register exit, while rejecting master admin', async () => {
+    workRepository.findOne.mockResolvedValue({
+      pk_id_ponto: 12,
+      fk_id_func: caller.sub,
+      entrada: '08:00:00',
+      saida: '08:00:00',
+      data_ponto: new Date('2026-10-04'),
+      total_dia: '00:00:00',
+    });
+
+    const resAdmin = await service.update(
+      12,
+      { saida: '17:00:00', latitude: point.latitude, longitude: point.longitude },
+      { ...caller, role: ROLES.ADMIN },
+    );
+    expect(resAdmin.status).toBe('success');
+
+    await expect(
+      service.update(
+        12,
+        { saida: '17:00:00', latitude: point.latitude, longitude: point.longitude },
+        { ...caller, role: ROLES.MASTER_ADMIN },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
 });

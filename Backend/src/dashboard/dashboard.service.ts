@@ -22,7 +22,7 @@ export class DashboardService {
   async getUserDashboard(userId: number) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['setor'],
+      relations: ['setor', 'role'],
     });
 
     if (!user) {
@@ -54,6 +54,7 @@ export class DashboardService {
         cpf: user.cpf,
         telefone: user.telefone || null,
         cargo: user.cargo || null,
+        role: user.role ? user.role.nome : null,
         setor: user.setor ? user.setor.nome : null,
         pontos: user.pontos_acumulados || 0,
         foto: user.foto_func || user.foto || null,

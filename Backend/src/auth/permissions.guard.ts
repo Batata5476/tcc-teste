@@ -3,6 +3,7 @@ import {
 	ExecutionContext,
 	ForbiddenException,
 	Injectable,
+	UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { isAdminRole } from './authorization.constants';
@@ -16,6 +17,7 @@ const DEFAULT_EMPLOYEE_PERMISSIONS = [
 	'chat.delete',
 	'meetings.read',
 	'meetings.create',
+	'meetings.update',
 	'occurrences.read',
 	'occurrences.create',
 	'occurrences.update',
@@ -48,7 +50,7 @@ export class PermissionsGuard implements CanActivate {
 		// Obtém as permissões do usuário a partir do request
 		const request = context.switchToHttp().getRequest();
 		if (!request.user) {
-			return true;
+			throw new UnauthorizedException('Usuário não autenticado');
 		}
 
 		// Administradores possuem acesso a todas as permissões

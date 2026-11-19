@@ -23,18 +23,37 @@ type Occurrence = {
   ocorrencias?: string;
   atestado_func?: string;
   dth_ocorrencia?: string;
+  fk_id_func?: number;
+};
+
+type EmployeeOption = {
+  id: number;
+  nome: string;
+  status?: string;
 };
 
 type PerfilMedicalModalProps = {
   visible: boolean;
   onClose: () => void;
+  isAdmin?: boolean;
 };
+
+function showAlert(title: string, message: string) {
+  if (Platform.OS === "web") {
+    window.alert(`${title}: ${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
 export default function PerfilMedicalModal({
   visible,
   onClose,
+  isAdmin = false,
 }: PerfilMedicalModalProps) {
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [selectedFuncId, setSelectedFuncId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -75,6 +94,18 @@ export default function PerfilMedicalModal({
 
         setOccurrences(list);
       }
+
+      if (isAdmin) {
+        const empRes = await authenticatedFetch("/users").catch(() => null);
+        if (empRes && empRes.ok) {
+          const empBody = await empRes.json().catch(() => ({}));
+          const activeList: EmployeeOption[] = (empBody.data ?? []).filter(
+            (u: any) => u.status !== "DELETED"
+          );
+          setEmployees(activeList);
+          setSelectedFuncId((prev) => prev ?? (activeList[0]?.id ?? null));
+        }
+      }
     } catch (err) {
       console.error("Erro ao buscar ocorrências médicas:", err);
     } finally {
@@ -90,30 +121,41 @@ export default function PerfilMedicalModal({
 
   const handleSendJustificativa = async () => {
     if (!justificativa.trim() && !atestadoText.trim()) {
-      Alert.alert(
+      showAlert(
         "Atenção",
         "Preencha o motivo/justificativa ou as informações do atestado."
       );
       return;
     }
 
+    if (isAdmin && !selectedFuncId) {
+      showAlert("Atenção", "Selecione o colaborador para vincular o registro.");
+      return;
+    }
+
     try {
       setSubmitting(true);
 
+      const payload: Record<string, any> = {
+        ocorrencias:
+          justificativa.trim() || "Justificativa de ausência",
+        atestado_func: atestadoText.trim() || undefined,
+      };
+      if (isAdmin && selectedFuncId) {
+        payload.fk_id_func = selectedFuncId;
+      }
+
       const res = await authenticatedFetch("/occurrences", {
         method: "POST",
-        body: JSON.stringify({
-          ocorrencias:
-            justificativa.trim() || "Justificativa de ausência",
-          atestado_func: atestadoText.trim() || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        throw new Error("Erro ao registrar justificativa médica.");
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.message || "Erro ao registrar justificativa médica.");
       }
 
-      Alert.alert(
+      showAlert(
         "Sucesso",
         "Justificativa/Atestado registrado com sucesso!"
       );
@@ -124,7 +166,7 @@ export default function PerfilMedicalModal({
 
       fetchOccurrences();
     } catch (err: any) {
-      Alert.alert("Erro", err.message || "Não foi possível enviar.");
+      showAlert("Erro", err.message || "Não foi possível enviar.");
     } finally {
       setSubmitting(false);
     }
@@ -151,43 +193,49 @@ export default function PerfilMedicalModal({
   };
 
   const handleDeleteOccurrence = async (id: number) => {
-    Alert.alert(
-      "Excluir registro",
-      "Tem certeza que deseja excluir este registro médico?",
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Excluir",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const res = await authenticatedFetch(
-                `/occurrences/${id}`,
-                {
-                  method: "DELETE",
-                }
-              );
+    const executeDelete = async () => {
+      try {
+        const res = await authenticatedFetch(`/occurrences/${id}`, {
+          method: "DELETE",
+        });
 
-              if (!res.ok) {
-                throw new Error(
-                  "Não foi possível excluir o registro."
-                );
-              }
+        if (!res.ok) {
+          throw new Error("Não foi possível excluir o registro.");
+        }
 
-              await fetchOccurrences();
-            } catch (err: any) {
-              Alert.alert(
-                "Erro",
-                err.message || "Não foi possível excluir o registro."
-              );
-            }
+        await fetchOccurrences();
+      } catch (err: any) {
+        const errorMsg = err.message || "Não foi possível excluir o registro.";
+        if (Platform.OS === "web") {
+          window.alert(`Erro: ${errorMsg}`);
+        } else {
+          Alert.alert("Erro", errorMsg);
+        }
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Tem certeza que deseja excluir este registro médico?");
+      if (confirmed) {
+        executeDelete();
+      }
+    } else {
+      Alert.alert(
+        "Excluir registro",
+        "Tem certeza que deseja excluir este registro médico?",
+        [
+          {
+            text: "Cancelar",
+            style: "cancel",
           },
-        },
-      ]
-    );
+          {
+            text: "Excluir",
+            style: "destructive",
+            onPress: executeDelete,
+          },
+        ]
+      );
+    }
   };
 
   return (
@@ -333,6 +381,45 @@ export default function PerfilMedicalModal({
                   : "Anexar Justificativa ou Atestado"}
               </Text>
 
+              {isAdmin && !editingOccurrence && employees.length > 0 && (
+                <View style={{ marginBottom: 10 }}>
+                  <Text style={styles.inputLabel}>Colaborador:</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+                  >
+                    {employees.map((emp) => {
+                      const selected = selectedFuncId === emp.id;
+                      return (
+                        <TouchableOpacity
+                          key={emp.id}
+                          onPress={() => setSelectedFuncId(emp.id)}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 16,
+                            borderWidth: 1,
+                            borderColor: selected ? "#285A71" : "#CBD5E1",
+                            backgroundColor: selected ? "#285A71" : "#F8FAFC",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: "600",
+                              color: selected ? "#FFFFFF" : "#334155",
+                            }}
+                          >
+                            {emp.nome}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+
               <Text style={styles.inputLabel}>
                 Motivo / Justificativa:
               </Text>
@@ -340,6 +427,7 @@ export default function PerfilMedicalModal({
               <TextInput
                 value={justificativa}
                 onChangeText={setJustificativa}
+                maxLength={255}
                 placeholder="Ex: Consulta médica de rotina / Falta justificada"
                 placeholderTextColor="#7A7A7A"
                 style={styles.textInput}
@@ -390,7 +478,7 @@ export default function PerfilMedicalModal({
                           atestadoText.trim() || undefined
                         );
 
-                        Alert.alert(
+                        showAlert(
                           "Sucesso",
                           "Registro atualizado com sucesso!"
                         );
@@ -399,7 +487,7 @@ export default function PerfilMedicalModal({
                         setJustificativa("");
                         setAtestadoText("");
                       } catch (err: any) {
-                        Alert.alert(
+                        showAlert(
                           "Erro",
                           err.message ||
                             "Não foi possível atualizar."

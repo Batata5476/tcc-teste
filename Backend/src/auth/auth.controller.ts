@@ -52,6 +52,7 @@ export class AuthController {
   }
 
   // Validação de senha para ponto no PC / confirmação de identidade
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
   @UseGuards(JwtAuthGuard)
   @Post('verify-password')
   async verifyPassword(@Body('senha') senha: string, @Req() req: any) {

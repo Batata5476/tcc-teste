@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -47,7 +48,7 @@ export class AuthService {
     let code = '';
     for (let i = 0; i < 8; i++) {
       if (i === 4) code += '-';
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+      code += chars.charAt(randomInt(0, chars.length));
     }
     return code;
   }
@@ -112,6 +113,9 @@ export class AuthService {
       }
 
       user = await query.addSelect('user.senha').getOne();
+      if (user && user.role?.nome === ROLES.MASTER_ADMIN) {
+        isCompanyMaster = true;
+      }
     }
 
     if (!user) {

@@ -742,7 +742,7 @@ export default function ChatScreen() {
         textToSend = prefix;
       }
     } else {
-      textToSend = inputText.trim();
+      textToSend = inputText.trim().slice(0, 200);
     }
 
     const chatId = Number(selectedChat.id);
@@ -1530,7 +1530,7 @@ export default function ChatScreen() {
   };
 
   const handleSelectEmoji = (emoji: string) => {
-          setInputText((prev) => prev + emoji);
+          setInputText((prev) => (prev + emoji).slice(0, 200));
     requestAnimationFrame(() => {
           inputRef.current?.focus();
     });
@@ -1689,6 +1689,7 @@ export default function ChatScreen() {
                 : "Escreva sua mensagem..."
             }
             placeholderTextColor="#94A3B8"
+            maxLength={200}
             value={inputText}
             onChangeText={setInputText}
             onFocus={() => {

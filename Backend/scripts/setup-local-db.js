@@ -21,6 +21,8 @@ const migrations = [
   'migration_seed_authorization.sql',
   'migration_add_work_geolocation.sql',
   'migration_add_meeting_fields.sql',
+  'migration_add_meeting_link.sql',
+  'migration_fix_occurrence_length.sql',
 ];
 
 async function setupDatabase() {

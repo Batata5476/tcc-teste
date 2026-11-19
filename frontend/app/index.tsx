@@ -663,6 +663,16 @@ export default function LoginScreen() {
                 >
                   <Text style={s.firstAccessText}>Primeiro acesso</Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.firstAccessBtn, { marginTop: 10, borderWidth: 0 }]}
+                  onPress={() => router.push("/cadastroEmpresa")}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.firstAccessText, { fontSize: 13 }]}>
+                    Cadastrar nova empresa
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </ScrollView>

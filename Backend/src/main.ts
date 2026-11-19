@@ -36,7 +36,15 @@ async function bootstrap() {
 
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ limit: '10mb', extended: true }));
-  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+  app.use(
+    '/uploads',
+    express.static(join(process.cwd(), 'uploads'), {
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
+      },
+    }),
+  );
   app.enableCors();
   app.useGlobalPipes(
     new ValidationPipe({

@@ -32,7 +32,7 @@ type Employee = {
   telefone?: string;
   pontos_acumulados?: number;
   role?: { id: number; nome: string };
-  setor?: { id: number; nome_setor: string };
+  setor?: { id: number; nome?: string; nome_setor?: string };
 };
 
 type Occurrence = {
@@ -48,10 +48,11 @@ export default function GestaoFuncionariosScreen() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFilter, setSelectedFilter] = useState<"todos" | "ativos" | "inativos">("todos");
+  const [selectedFilter, setSelectedFilter] = useState<"todos" | "ativos" | "inativos" | "faltas">("todos");
 
   // Modal de Detalhes do Colaborador
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -62,14 +63,29 @@ export default function GestaoFuncionariosScreen() {
   const [occurrenceReason, setOccurrenceReason] = useState("");
   const [savingOccurrence, setSavingOccurrence] = useState(false);
 
+  // Fallback seguro de navegação para voltar
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/perfilAdm");
+    }
+  };
+
   // Carrega dados do backend
   const loadData = async () => {
     try {
       setLoading(true);
-      const [usersRes, occRes] = await Promise.all([
+      const [usersRes, occRes, meRes] = await Promise.all([
         authenticatedFetch("/users"),
         authenticatedFetch("/occurrences").catch(() => null),
+        authenticatedFetch("/dashboard/user").catch(() => null),
       ]);
+
+      if (meRes && meRes.ok) {
+        const meBody = await meRes.json().catch(() => ({}));
+        setCurrentUserId(meBody.data?.id ?? null);
+      }
 
       if (usersRes.ok) {
         const usersBody = await usersRes.json();
@@ -124,6 +140,7 @@ export default function GestaoFuncionariosScreen() {
       // Filtro de status
       if (selectedFilter === "ativos" && emp.status !== "ACTIVE") return false;
       if (selectedFilter === "inativos" && emp.status === "ACTIVE") return false;
+      if (selectedFilter === "faltas" && (occurrenceCountByFunc[emp.id] || 0) === 0) return false;
 
       // Filtro de busca
       const q = searchQuery.toLowerCase().trim();
@@ -132,54 +149,91 @@ export default function GestaoFuncionariosScreen() {
       const nameMatch = emp.nome?.toLowerCase().includes(q);
       const emailMatch = emp.email?.toLowerCase().includes(q);
       const cargoMatch = emp.cargo?.toLowerCase().includes(q);
-      const setorMatch = emp.setor?.nome_setor?.toLowerCase().includes(q);
+      const setorName = emp.setor?.nome || emp.setor?.nome_setor;
+      const setorMatch = setorName?.toLowerCase().includes(q);
       const cpfMatch = emp.cpf?.includes(q);
 
       return nameMatch || emailMatch || cargoMatch || setorMatch || cpfMatch;
     });
-  }, [employees, selectedFilter, searchQuery]);
+  }, [employees, selectedFilter, searchQuery, occurrenceCountByFunc]);
 
-  // Alterna status do funcionário (Ativo / Inativo)
+  const isProtectedAdminAccount = (emp: Employee) =>
+    emp.id === currentUserId || emp.role?.nome === "Administrador Master";
+
+  // Alterna status do funcionário (Ativo / Inativo) com suporte 100% funcional na Web e Mobile
   const handleToggleStatus = (employee: Employee) => {
+    if (isProtectedAdminAccount(employee)) {
+      const msg = "A conta principal ou sua própria sessão ativa não pode ser desativada.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Conta Protegida", msg);
+      }
+      return;
+    }
     const isCurrentlyActive = employee.status === "ACTIVE";
     const newStatus = isCurrentlyActive ? "DISABLED" : "ACTIVE";
     const actionText = isCurrentlyActive ? "Desativar" : "Ativar";
 
-    Alert.alert(
-      `${actionText} Colaborador`,
-      `Tem certeza que deseja ${actionText.toLowerCase()} o acesso de ${employee.nome}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: actionText,
-          style: isCurrentlyActive ? "destructive" : "default",
-          onPress: async () => {
-            try {
-              const res = await authenticatedFetch(`/users/${employee.id}`, {
-                method: "PATCH",
-                body: JSON.stringify({ status: newStatus }),
-              });
+    const executeToggle = async () => {
+      try {
+        const res = await authenticatedFetch(`/users/${employee.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: newStatus }),
+        });
 
-              if (res.ok) {
-                // Atualização otimista local
-                setEmployees((prev) =>
-                  prev.map((e) => (e.id === employee.id ? { ...e, status: newStatus } : e))
-                );
-                if (selectedEmployee?.id === employee.id) {
-                  setSelectedEmployee((prev) => (prev ? { ...prev, status: newStatus } : null));
-                }
-                Alert.alert("Sucesso", `Colaborador ${isCurrentlyActive ? "desativado" : "ativado"} com sucesso!`);
-              } else {
-                const err = await res.json().catch(() => ({}));
-                Alert.alert("Erro", err.message || "Não foi possível alterar o status.");
-              }
-            } catch (e) {
-              Alert.alert("Erro", "Erro ao conectar com o servidor.");
-            }
+        if (res.ok) {
+          // Atualização otimista local
+          setEmployees((prev) =>
+            prev.map((e) => (e.id === employee.id ? { ...e, status: newStatus } : e))
+          );
+          if (selectedEmployee?.id === employee.id) {
+            setSelectedEmployee((prev) => (prev ? { ...prev, status: newStatus } : null));
+          }
+          const successMsg = `Colaborador ${isCurrentlyActive ? "desativado" : "ativado"} com sucesso!`;
+          if (Platform.OS === "web") {
+            window.alert(successMsg);
+          } else {
+            Alert.alert("Sucesso", successMsg);
+          }
+        } else {
+          const err = await res.json().catch(() => ({}));
+          const errorMsg = err.message || "Não foi possível alterar o status.";
+          if (Platform.OS === "web") {
+            window.alert(`Erro: ${errorMsg}`);
+          } else {
+            Alert.alert("Erro", errorMsg);
+          }
+        }
+      } catch (e) {
+        const errorMsg = "Erro ao conectar com o servidor.";
+        if (Platform.OS === "web") {
+          window.alert(`Erro: ${errorMsg}`);
+        } else {
+          Alert.alert("Erro", errorMsg);
+        }
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(`Tem certeza que deseja ${actionText.toLowerCase()} o acesso de ${employee.nome}?`);
+      if (confirmed) {
+        executeToggle();
+      }
+    } else {
+      Alert.alert(
+        `${actionText} Colaborador`,
+        `Tem certeza que deseja ${actionText.toLowerCase()} o acesso de ${employee.nome}?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: actionText,
+            style: isCurrentlyActive ? "destructive" : "default",
+            onPress: executeToggle,
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   // Abre modal de detalhes
@@ -253,7 +307,7 @@ export default function GestaoFuncionariosScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => router.back()}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <Ionicons name="arrow-back" size={22} color="#285A71" />
@@ -288,39 +342,71 @@ export default function GestaoFuncionariosScreen() {
             />
           }
         >
-          {/* Cards de Métricas / KPIs */}
+          {/* Cards de Métricas / KPIs Interativos como Filtros Rápidos */}
           <View style={styles.kpiContainer}>
-            <View style={[styles.kpiCard, styles.kpiTotal]}>
+            <TouchableOpacity
+              style={[
+                styles.kpiCard,
+                styles.kpiTotal,
+                selectedFilter === "todos" && styles.kpiCardSelected,
+              ]}
+              onPress={() => setSelectedFilter("todos")}
+              activeOpacity={0.7}
+            >
               <View style={styles.kpiIconBox}>
                 <Ionicons name="people" size={20} color="#285A71" />
               </View>
               <Text style={styles.kpiValue}>{totalCount}</Text>
               <Text style={styles.kpiLabel}>Total</Text>
-            </View>
+            </TouchableOpacity>
 
-            <View style={[styles.kpiCard, styles.kpiActive]}>
+            <TouchableOpacity
+              style={[
+                styles.kpiCard,
+                styles.kpiActive,
+                selectedFilter === "ativos" && styles.kpiCardSelected,
+              ]}
+              onPress={() => setSelectedFilter("ativos")}
+              activeOpacity={0.7}
+            >
               <View style={[styles.kpiIconBox, { backgroundColor: "#DCFCE7" }]}>
                 <Ionicons name="checkmark-circle" size={20} color="#15803D" />
               </View>
               <Text style={[styles.kpiValue, { color: "#15803D" }]}>{activeCount}</Text>
               <Text style={styles.kpiLabel}>Ativos</Text>
-            </View>
+            </TouchableOpacity>
 
-            <View style={[styles.kpiCard, styles.kpiInactive]}>
+            <TouchableOpacity
+              style={[
+                styles.kpiCard,
+                styles.kpiInactive,
+                selectedFilter === "inativos" && styles.kpiCardSelected,
+              ]}
+              onPress={() => setSelectedFilter("inativos")}
+              activeOpacity={0.7}
+            >
               <View style={[styles.kpiIconBox, { backgroundColor: "#FEE2E2" }]}>
                 <Ionicons name="close-circle" size={20} color="#B91C1C" />
               </View>
               <Text style={[styles.kpiValue, { color: "#B91C1C" }]}>{inactiveCount}</Text>
               <Text style={styles.kpiLabel}>Inativos</Text>
-            </View>
+            </TouchableOpacity>
 
-            <View style={[styles.kpiCard, styles.kpiAlert]}>
+            <TouchableOpacity
+              style={[
+                styles.kpiCard,
+                styles.kpiAlert,
+                selectedFilter === "faltas" && styles.kpiCardSelected,
+              ]}
+              onPress={() => setSelectedFilter("faltas")}
+              activeOpacity={0.7}
+            >
               <View style={[styles.kpiIconBox, { backgroundColor: "#FEF3C7" }]}>
                 <Ionicons name="warning" size={20} color="#B45309" />
               </View>
               <Text style={[styles.kpiValue, { color: "#B45309" }]}>{totalOccurrences}</Text>
               <Text style={styles.kpiLabel}>Faltas / Ocorr.</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Barra de Pesquisa */}
@@ -375,6 +461,17 @@ export default function GestaoFuncionariosScreen() {
                 Inativos ({inactiveCount})
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabButton, selectedFilter === "faltas" && styles.tabButtonActive]}
+              onPress={() => setSelectedFilter("faltas")}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.tabDot, { backgroundColor: "#D97706" }]} />
+              <Text style={[styles.tabText, selectedFilter === "faltas" && styles.tabTextActive]}>
+                Faltas ({employees.filter((e) => (occurrenceCountByFunc[e.id] || 0) > 0).length})
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Lista de Colaboradores */}
@@ -426,7 +523,9 @@ export default function GestaoFuncionariosScreen() {
                         </Text>
                         <Text style={styles.employeeRole} numberOfLines={1}>
                           {emp.cargo || emp.role?.nome || "Colaborador"}
-                          {emp.setor?.nome_setor ? ` • ${emp.setor.nome_setor}` : ""}
+                          {(emp.setor?.nome || emp.setor?.nome_setor)
+                            ? ` • ${emp.setor?.nome || emp.setor?.nome_setor}`
+                            : ""}
                         </Text>
                       </View>
                     </View>
@@ -463,28 +562,30 @@ export default function GestaoFuncionariosScreen() {
 
                   {/* Botões de Ação do Card */}
                   <View style={styles.cardActionsRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.toggleStatusBtn,
-                        isActive ? styles.toggleStatusBtnDeactivate : styles.toggleStatusBtnActivate,
-                      ]}
-                      activeOpacity={0.8}
-                      onPress={() => handleToggleStatus(emp)}
-                    >
-                      <Ionicons
-                        name={isActive ? "ban-outline" : "checkmark-circle-outline"}
-                        size={14}
-                        color={isActive ? "#B91C1C" : "#15803D"}
-                      />
-                      <Text
+                    {!isProtectedAdminAccount(emp) && (
+                      <TouchableOpacity
                         style={[
-                          styles.toggleStatusBtnText,
-                          isActive ? { color: "#B91C1C" } : { color: "#15803D" },
+                          styles.toggleStatusBtn,
+                          isActive ? styles.toggleStatusBtnDeactivate : styles.toggleStatusBtnActivate,
                         ]}
+                        activeOpacity={0.8}
+                        onPress={() => handleToggleStatus(emp)}
                       >
-                        {isActive ? "Desativar" : "Ativar"}
-                      </Text>
-                    </TouchableOpacity>
+                        <Ionicons
+                          name={isActive ? "ban-outline" : "checkmark-circle-outline"}
+                          size={14}
+                          color={isActive ? "#B91C1C" : "#15803D"}
+                        />
+                        <Text
+                          style={[
+                            styles.toggleStatusBtnText,
+                            isActive ? { color: "#B91C1C" } : { color: "#15803D" },
+                          ]}
+                        >
+                          {isActive ? "Desativar" : "Ativar"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
 
                     <TouchableOpacity
                       style={styles.cardAddOccBtn}
@@ -626,7 +727,7 @@ export default function GestaoFuncionariosScreen() {
                         <Ionicons name="business-outline" size={16} color="#285A71" />
                         <Text style={styles.infoItemLabel}>Setor:</Text>
                         <Text style={styles.infoItemValue}>
-                          {selectedEmployee.setor?.nome_setor || "Geral"}
+                          {selectedEmployee.setor?.nome || selectedEmployee.setor?.nome_setor || "Geral"}
                         </Text>
                       </View>
 
@@ -706,6 +807,7 @@ export default function GestaoFuncionariosScreen() {
                             placeholderTextColor="#94A3B8"
                             value={occurrenceReason}
                             onChangeText={setOccurrenceReason}
+                            maxLength={255}
                             multiline
                             numberOfLines={3}
                           />
@@ -780,27 +882,29 @@ export default function GestaoFuncionariosScreen() {
                     </View>
 
                     {/* Botão de Alternar Acesso no Fim do Modal */}
-                    <TouchableOpacity
-                      style={[
-                        styles.modalToggleBtn,
-                        selectedEmployee.status === "ACTIVE"
-                          ? styles.modalToggleBtnDeactivate
-                          : styles.modalToggleBtnActivate,
-                      ]}
-                      onPress={() => handleToggleStatus(selectedEmployee)}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons
-                        name={selectedEmployee.status === "ACTIVE" ? "ban" : "checkmark-circle"}
-                        size={18}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.modalToggleBtnText}>
-                        {selectedEmployee.status === "ACTIVE"
-                          ? "Desativar Acesso do Colaborador"
-                          : "Reativar Acesso do Colaborador"}
-                      </Text>
-                    </TouchableOpacity>
+                    {!isProtectedAdminAccount(selectedEmployee) && (
+                      <TouchableOpacity
+                        style={[
+                          styles.modalToggleBtn,
+                          selectedEmployee.status === "ACTIVE"
+                            ? styles.modalToggleBtnDeactivate
+                            : styles.modalToggleBtnActivate,
+                        ]}
+                        onPress={() => handleToggleStatus(selectedEmployee)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons
+                          name={selectedEmployee.status === "ACTIVE" ? "ban" : "checkmark-circle"}
+                          size={18}
+                          color="#FFFFFF"
+                        />
+                        <Text style={styles.modalToggleBtnText}>
+                          {selectedEmployee.status === "ACTIVE"
+                            ? "Desativar Acesso do Colaborador"
+                            : "Reativar Acesso do Colaborador"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </>
                 )}
               </ScrollView>
@@ -890,6 +994,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
+    ...(Platform.OS === "web" ? ({ cursor: "pointer" } as any) : {}),
+  },
+  kpiCardSelected: {
+    borderWidth: 2,
+    borderColor: "#285A71",
+    backgroundColor: "#F0F7FA",
+    elevation: 3,
   },
   kpiTotal: {
     borderColor: "#CCE3ED",

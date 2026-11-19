@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Request } from '@nestjs/common';
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { UpdateCompanyDto } from './dto/update-company.dto';
+import { CreateSetorDto } from './dto/create-setor.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions, Roles } from '../auth/authorization.decorators';
 import { RolesGuard } from '../auth/roles.guard';
@@ -16,6 +18,19 @@ export class CompanyController {
   @Get()
   findAll(@Request() req) {
     return this.companyService.findAll(req.user.empresa_id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('sectors')
+  findSectors(@Request() req) {
+    return this.companyService.findSectors(req.user.empresa_id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Post('sectors')
+  createSector(@Body() dto: CreateSetorDto, @Request() req) {
+    return this.companyService.createSector(req.user.empresa_id, dto.nome);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -35,7 +50,7 @@ export class CompanyController {
   @Roles(...ADMIN_ROLES)
   @Permissions('company.update')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCompanyDto: Partial<CreateCompanyDto>, @Request() req) {
+  update(@Param('id') id: string, @Body() updateCompanyDto: UpdateCompanyDto, @Request() req) {
     return this.companyService.update(+id, updateCompanyDto, req.user.empresa_id);
   }
 

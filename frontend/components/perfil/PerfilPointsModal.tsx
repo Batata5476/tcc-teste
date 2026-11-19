@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   Alert,
   Modal,
+  Platform,
   StyleSheet,
   Switch,
   Text,
@@ -26,12 +27,14 @@ export default function PerfilPointsModal({
 
   const handleToggleSwitch = (value: boolean) => {
     setPointsEnabled(value);
-    Alert.alert(
-      "Sistema de Pontuações",
-      value
-        ? "Pontuação ativada! Atividades concluídas gerarão pontos normalmente."
-        : "Pontuação desativada. As atividades concluídas não acumularão pontos."
-    );
+    const msg = value
+      ? "Pontuação ativada! Atividades concluídas gerarão pontos normalmente."
+      : "Pontuação desativada. As atividades concluídas não acumularão pontos.";
+    if (Platform.OS === "web") {
+      window.alert(msg);
+    } else {
+      Alert.alert("Sistema de Pontuações", msg);
+    }
   };
 
   return (
@@ -89,7 +92,7 @@ export default function PerfilPointsModal({
             </View>
             <View style={styles.ruleItem}>
               <Ionicons name="checkmark-circle-outline" size={16} color="#16A34A" />
-              <Text style={styles.ruleText}>Tarefa Normal: +50 pontos</Text>
+              <Text style={styles.ruleText}>Tarefa Normal: +100 pontos</Text>
             </View>
           </View>
 
