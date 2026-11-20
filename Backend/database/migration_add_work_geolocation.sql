@@ -1,0 +1,9 @@
+ALTER TABLE empresa
+  ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7);
+
+ALTER TABLE entrada_saida
+  ADD COLUMN IF NOT EXISTS latitude_registro NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS longitude_registro NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS latitude_saida NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS longitude_saida NUMERIC(10,7);

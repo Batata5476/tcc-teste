@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "TCC",
+    "slug": "tcc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "tcc",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Permita que o Ponto-E use sua localização para registrar a jornada."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permita que o Coopera utilize o Face ID para autenticar o registro de ponto."
+        }
+      ],
+      "expo-status-bar",
+      "expo-font"
+    ]
+  }
+}

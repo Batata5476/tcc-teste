@@ -1,0 +1,124 @@
+Relatório de Execução de Testes: Backend e Frontend
+Este documento consolida o resumo técnico completo dos testes unitários executados no terminal para o Backend e o Frontend do projeto.
+
+1. Visão Geral dos Testes
+Camada	Arquivo de Origem	Função Selecionada	Qtd. Testes	Status
+Backend	
+Backend/src/auth/auth.service.ts
+validatePasswordPolicy(password)	2	✅ Aprovado (2/2)
+Frontend	
+frontend/services/auth.ts
+saveToken(), getToken(), logout()	2	✅ Aprovado (2/2)
+2. Detalhamento das Funções e Casos de Teste
+2.1. Backend: Validação de Política de Senhas (validatePasswordPolicy)
+Objetivo: Garantir que o sistema apenas aceite senhas que cumpram os requisitos mínimos de segurança (pelo menos 8 caracteres, uma letra maiúscula, uma minúscula, um número e um caractere especial).
+Cenários Testados:
+Cenário de Sucesso (Senha Válida):
+Entrada: 'SenhaForte@2026'
+Resultado Esperado: Retorno true, sem lançamento de exceções.
+Cenário de Rejeição (Senhas Fora do Padrão):
+Entradas: '12345' (muito curta), 'senhasemnada' (sem maiúscula/número/símbolo), 'SENHASEMNADA1' (sem minúscula/símbolo), 'SenhaSemSimbolo1' (sem símbolo).
+Resultado Esperado: Lançamento da exceção BadRequestException contendo a mensagem de restrição de segurança.
+2.2. Frontend: Gerenciamento de Sessão e Token (saveToken, getToken, logout)
+Objetivo: Garantir a integridade do ciclo de vida da autenticação, testando a persistência, recuperação e eliminação do token JWT de autenticação do usuário.
+Cenários Testados:
+Cenário de Armazenamento e Recuperação:
+Ação: saveToken(mockJwt) seguido de getToken().
+Resultado Esperado: O token recuperado deve ser estritamente igual ao token gravado.
+Cenário de Limpeza de Sessão (Logout):
+Ação: logout() seguido de getToken().
+Resultado Esperado: O token deve ser completamente removido da memória/armazenamento, retornando null.
+3. Linhas de Comando e Resultados no Terminal
+3.1. Teste Unitário do Backend
+Linha de comando:
+powershell
+
+node --test tests/backend_test.mjs
+Resultado obtido no terminal:
+text
+
+▶ Backend - AuthService.validatePasswordPolicy
+  ✔ Teste 1: Deve aprovar com sucesso uma senha forte e válida (0.7211ms)
+  ✔ Teste 2: Deve rejeitar e lançar BadRequestException para senha fraca/inválida (0.627ms)
+✔ Backend - AuthService.validatePasswordPolicy (2.2274ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 64.705
+3.2. Teste Unitário do Frontend
+Linha de comando:
+powershell
+
+node --test tests/frontend_test.mjs
+Resultado obtido no terminal:
+text
+
+▶ Frontend - auth.service (saveToken, getToken, logout)
+  ✔ Teste 1: Deve armazenar e recuperar o token JWT corretamente (saveToken + getToken) (0.5974ms)
+  ✔ Teste 2: Deve remover o token da sessão ao fazer logout (logout + getToken) (0.1655ms)
+✔ Frontend - auth.service (saveToken, getToken, logout) (1.5792ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 67.0233
+3.3. Execução Unificada de Toda a Suíte
+Linha de comando:
+powershell
+
+node tests/run_all.mjs
+Resultado obtido no terminal:
+text
+
+================================================================
+🚀 INICIANDO TESTES DO BACKEND E FRONTEND NO TERMINAL
+================================================================
+📦 1. EXECUTANDO TESTES DO BACKEND...
+   Função selecionada: AuthService.validatePasswordPolicy()
+   Arquivo de origem:  Backend/src/auth/auth.service.ts
+   ------------------------------------------------------------
+▶ Backend - AuthService.validatePasswordPolicy
+  ✔ Teste 1: Deve aprovar com sucesso uma senha forte e válida (0.7067ms)
+  ✔ Teste 2: Deve rejeitar e lançar BadRequestException para senha fraca/inválida (0.5622ms)
+✔ Backend - AuthService.validatePasswordPolicy (2.1135ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 70.078
+📦 2. EXECUTANDO TESTES DO FRONTEND...
+   Função selecionada: saveToken / getToken / logout
+   Arquivo de origem:  frontend/services/auth.ts
+   ------------------------------------------------------------
+▶ Frontend - auth.service (saveToken, getToken, logout)
+  ✔ Teste 1: Deve armazenar e recuperar o token JWT corretamente (saveToken + getToken) (0.5925ms)
+  ✔ Teste 2: Deve remover o token da sessão ao fazer logout (logout + getToken) (0.1678ms)
+✔ Frontend - auth.service (saveToken, getToken, logout) (1.5935ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 67.8038
+================================================================
+✅ TODOS OS TESTES PASSARAM COM SUCESSO (4/4 PASS)
+================================================================
+4. Tabela Resumo dos Resultados
+ID	Módulo	Função	Descrição do Teste	Status	Duração
+#1	Backend	validatePasswordPolicy	Aprovação de senha forte (SenhaForte@2026)	✅ PASS	~0.72 ms
+#2	Backend	validatePasswordPolicy	Rejeição com BadRequestException para senhas fracas	✅ PASS	~0.63 ms
+#3	Frontend	saveToken / getToken	Persistência e integridade do token JWT	✅ PASS	~0.60 ms
+#4	Frontend	logout / getToken	Exclusão do token e retorno null	✅ PASS	~0.17 ms
+Taxa de Sucesso: 100% (4 de 4 testes aprovados).

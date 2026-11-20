@@ -1,0 +1,2 @@
+ALTER TABLE reuniao
+  ADD COLUMN IF NOT EXISTS link_reuniao TEXT;
