@@ -13,19 +13,22 @@ function validateRequiredEnv(config: ConfigService) {
     throw new Error('JWT_SECRET ausente ou insegura. Defina uma string com pelo menos 32 caracteres.');
   }
 
-  const requiredEnv = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_DATABASE', 'NODE_ENV'];
-  const missing = requiredEnv.filter((key) => {
-    const value = config.get<string | number>(key);
-    return value === undefined || value === null || value === '';
-  });
+  const databaseUrl = config.get<string>('DATABASE_URL');
+  if (!databaseUrl) {
+    const requiredEnv = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_DATABASE'];
+    const missing = requiredEnv.filter((key) => {
+      const value = config.get<string | number>(key);
+      return value === undefined || value === null || value === '';
+    });
 
-  if (missing.length > 0) {
-    throw new Error(`Variáveis obrigatórias ausentes: ${missing.join(', ')}`);
-  }
+    if (missing.length > 0) {
+      throw new Error(`Variáveis obrigatórias ausentes: ${missing.join(', ')} (ou defina DATABASE_URL)`);
+    }
 
-  const dbPort = Number(config.get<number>('DB_PORT'));
-  if (!Number.isInteger(dbPort) || dbPort <= 0 || dbPort > 65535) {
-    throw new Error('DB_PORT deve ser um número inteiro válido entre 1 e 65535.');
+    const dbPort = Number(config.get<number>('DB_PORT'));
+    if (!Number.isInteger(dbPort) || dbPort <= 0 || dbPort > 65535) {
+      throw new Error('DB_PORT deve ser um número inteiro válido entre 1 e 65535.');
+    }
   }
 }
 

@@ -7,6 +7,7 @@ export async function authenticatedFetch(endpoint: string, options: RequestInit 
 
   const headers = {
     'Content-Type': 'application/json',
+    ...(API_URL.includes('ngrok') ? { 'ngrok-skip-browser-warning': 'true' } : {}),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...options.headers,
   };

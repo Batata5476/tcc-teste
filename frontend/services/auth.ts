@@ -72,18 +72,45 @@ export interface LoginResult {
   };
 }
 
+// ─── Safe JSON Response Parser ───────────────────────────────────────────────
+
+function buildJsonHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(API_URL.includes('ngrok') ? { 'ngrok-skip-browser-warning': 'true' } : {}),
+  };
+}
+
+async function parseJsonResponse(response: Response): Promise<any> {
+  const rawText = await response.text();
+  if (!rawText) {
+    throw new Error(
+      `Servidor da API indisponível ou não configurado (HTTP ${response.status} em ${API_URL}). Verifique se o Backend está no ar e se EXPO_PUBLIC_API_URL está configurada.`,
+    );
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    throw new Error(
+      `O endereço ${API_URL} não retornou uma resposta JSON válida (HTTP ${response.status}). Verifique se EXPO_PUBLIC_API_URL aponta para o Backend NestJS.`,
+    );
+  }
+}
+
 export async function login(login: string, senha: string): Promise<LoginResult> {
   const response = await fetch(`${API_URL}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildJsonHeaders(),
     body: JSON.stringify({ login, senha }),
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
 
   if (!response.ok) {
     // Backend retorna 'PRIMEIRO_ACESSO_REQUERIDO' no message quando a conta precisa ser ativada
-    throw new Error(data.message || 'Erro no login');
+    const msg = Array.isArray(data.message) ? data.message.join('\n') : data.message;
+    throw new Error(msg || 'Erro no login');
   }
 
   const token = data.data.access_token;
@@ -101,14 +128,15 @@ export async function login(login: string, senha: string): Promise<LoginResult> 
 export async function validateFirstAccess(activation_code: string, token: string): Promise<void> {
   const response = await fetch(`${API_URL}/auth/first-access/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildJsonHeaders(),
     body: JSON.stringify({ activation_code, token }),
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
 
   if (!response.ok) {
-    throw new Error(data.message || 'Código ou token inválido');
+    const msg = Array.isArray(data.message) ? data.message.join('\n') : data.message;
+    throw new Error(msg || 'Código ou token inválido');
   }
 }
 
@@ -119,14 +147,15 @@ export async function activateFirstAccess(
 ): Promise<LoginResult> {
   const response = await fetch(`${API_URL}/auth/first-access/activate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildJsonHeaders(),
     body: JSON.stringify({ activation_code, token, senha }),
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
 
   if (!response.ok) {
-    throw new Error(data.message || 'Erro ao ativar conta');
+    const msg = Array.isArray(data.message) ? data.message.join('\n') : data.message;
+    throw new Error(msg || 'Erro ao ativar conta');
   }
 
   const accessToken = data.data.access_token;
@@ -143,13 +172,14 @@ export async function activateFirstAccess(
 export async function forgotPassword(email: string): Promise<void> {
   const response = await fetch(`${API_URL}/auth/forgot-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildJsonHeaders(),
     body: JSON.stringify({ email }),
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
 
   if (!response.ok) {
-    throw new Error(data.message || 'Erro ao solicitar redefinição');
+    const msg = Array.isArray(data.message) ? data.message.join('\n') : data.message;
+    throw new Error(msg || 'Erro ao solicitar redefinição');
   }
 }

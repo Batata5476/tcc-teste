@@ -720,7 +720,7 @@ const eyeStyles = StyleSheet.create({
 });
 
 const particleStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FEFDF9" },
+  container: { flex: 1, width: "100%", overflow: "hidden", backgroundColor: "#FEFDF9" },
   glow: { position: "absolute", borderRadius: 999 },
   glowTopLeft: {
     width: 400,
@@ -739,10 +739,11 @@ const particleStyles = StyleSheet.create({
 });
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
-  scroll: { flexGrow: 1 },
+  root: { flex: 1, width: "100%" },
+  scroll: { flexGrow: 1, width: "100%" },
   inner: {
     flex: 1,
+    width: "100%",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,

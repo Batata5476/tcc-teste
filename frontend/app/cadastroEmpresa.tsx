@@ -126,7 +126,21 @@ export default function CadastroEmpresa() {
         }),
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data: any = {};
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = {
+            message: `Resposta inválida do servidor (HTTP ${response.status} em ${API_URL}). Verifique EXPO_PUBLIC_API_URL.`,
+          };
+        }
+      } else if (!response.ok) {
+        data = {
+          message: `Servidor da API indisponível ou não configurado (HTTP ${response.status} em ${API_URL}).`,
+        };
+      }
 
       // Exibe feedback de sucesso se o cadastro for realizado ou de erro caso contrário
       if (response.ok) {

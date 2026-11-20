@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'; // Import ThrottlerModule and ThrottlerGuard for rate limiting
-import { APP_GUARD } from '@nestjs/core'; // Import APP_GUARD to apply guards globally
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -18,7 +18,6 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditModule } from './audit/audit.module';
 import { MailModule } from './mail/mail.module';
 import { BackupModule } from './backup/backup.module';
-
 
 @Module({
   imports: [
@@ -37,20 +36,37 @@ import { BackupModule } from './backup/backup.module';
       ],
     }),
 
-    // Database configuration using environment variables
+    // Database configuration (supports local DB_* or cloud DATABASE_URL + DB_SSL)
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_DATABASE'),
-        autoLoadEntities: true,
-        synchronize: false,
-      }),
+      useFactory: (configService: ConfigService) => {
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+        const dbSslEnv = configService.get<string>('DB_SSL');
+        const useSsl = dbSslEnv !== undefined ? dbSslEnv === 'true' : Boolean(databaseUrl);
+
+        if (databaseUrl) {
+          return {
+            type: 'postgres' as const,
+            url: databaseUrl,
+            ssl: useSsl ? { rejectUnauthorized: false } : false,
+            autoLoadEntities: true,
+            synchronize: false,
+          };
+        }
+
+        return {
+          type: 'postgres' as const,
+          host: configService.get<string>('DB_HOST'),
+          port: Number(configService.get<number>('DB_PORT')),
+          username: configService.get<string>('DB_USERNAME'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_DATABASE'),
+          ssl: useSsl ? { rejectUnauthorized: false } : false,
+          autoLoadEntities: true,
+          synchronize: false,
+        };
+      },
     }),
 
     // Application modules
@@ -78,4 +94,4 @@ import { BackupModule } from './backup/backup.module';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}
