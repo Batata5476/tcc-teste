@@ -349,9 +349,15 @@ export class ChatService {
       throw new BadRequestException('Formato de arquivo não permitido por segurança');
     }
 
-    const uploadDir = join(process.cwd(), 'uploads', 'chat');
-    if (!existsSync(uploadDir)) {
-      mkdirSync(uploadDir, { recursive: true });
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const baseUploadDir = isServerless ? '/tmp' : process.cwd();
+    const uploadDir = join(baseUploadDir, 'uploads', 'chat');
+    try {
+      if (!existsSync(uploadDir)) {
+        mkdirSync(uploadDir, { recursive: true });
+      }
+    } catch {
+      // Ignore directory creation error in read-only environments
     }
 
     // Limpa prefixos do tipo 'data:image/...;base64,' se presentes
