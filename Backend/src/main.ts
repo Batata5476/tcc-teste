@@ -2,10 +2,18 @@ import { NestFactory } from '@nestjs/core';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import { json, urlencoded } from 'express';
-import * as express from 'express';
+import express, { json, urlencoded } from 'express';
+import type { Request, Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
+
+const getExpress = (): any => {
+  if (typeof express === 'function') return express;
+  if ((express as any)?.default && typeof (express as any).default === 'function') {
+    return (express as any).default;
+  }
+  return require('express');
+};
 
 function validateRequiredEnv(config: ConfigService) {
   const jwtSecret = config.get<string>('JWT_SECRET');
@@ -38,10 +46,11 @@ function configureApp(app: INestApplication) {
 
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ limit: '10mb', extended: true }));
+  const expressFn = getExpress();
   app.use(
     '/uploads',
-    express.static(join(process.cwd(), 'uploads'), {
-      setHeaders: (res) => {
+    expressFn.static(join(process.cwd(), 'uploads'), {
+      setHeaders: (res: any) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
       },
@@ -56,14 +65,24 @@ function configureApp(app: INestApplication) {
     }),
   );
 
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/', (_req: any, res: any) => {
+    res.json({
+      status: 'online',
+      message: 'Coopera API NestJS ativa e conectada ao banco de dados',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   return config;
 }
 
-let cachedServer: express.Express | null = null;
+let cachedServer: any = null;
 
-async function getServerlessHandler(): Promise<express.Express> {
+async function getServerlessHandler(): Promise<any> {
   if (!cachedServer) {
-    const expressApp = express();
+    const expressFn = getExpress();
+    const expressApp = expressFn();
     const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
     configureApp(app);
     await app.init();
@@ -72,7 +91,7 @@ async function getServerlessHandler(): Promise<express.Express> {
   return cachedServer;
 }
 
-export default async function handler(req: express.Request, res: express.Response) {
+export default async function handler(req: Request, res: Response) {
   const server = await getServerlessHandler();
   return server(req, res);
 }
