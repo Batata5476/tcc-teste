@@ -43,13 +43,22 @@ export async function logout(): Promise<void> {
 }
 
 export async function login(loginInput: string, senha: string): Promise<any> {
-  const response = await fetch(`${API_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login: loginInput, senha }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login: loginInput, senha }),
+    });
+  } catch (err: any) {
+    throw new Error(
+      `Não foi possível conectar ao servidor da API em ${API_URL}. Verifique se o backend está rodando.`
+    );
+  }
 
-  const data = await response.json().catch(() => ({}));
+  const contentType = response.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+  const data = isJson ? await response.json().catch(() => ({})) : {};
 
   if (!response.ok) {
     if (
@@ -59,9 +68,16 @@ export async function login(loginInput: string, senha: string): Promise<any> {
     ) {
       throw new Error("PRIMEIRO_ACESSO_REQUERIDO");
     }
+
+    if (response.status === 404 || !isJson) {
+      throw new Error(
+        `Servidor da API não encontrado em ${API_URL}/auth/login. O backend precisa estar rodando e configurado em EXPO_PUBLIC_API_URL.`
+      );
+    }
+
     const message = Array.isArray(data.message)
       ? data.message.join(", ")
-      : data.message || "Credenciais inválidas ou erro no login.";
+      : data.message || "Credenciais inválidas.";
     throw new Error(message);
   }
 
@@ -148,3 +164,4 @@ export async function forgotPassword(email: string): Promise<any> {
 
   return data;
 }
+

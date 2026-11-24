@@ -141,8 +141,8 @@ export default function PerfilAdm() {
     }
   };
 
-  // Função para salvar a localização da empresa com latitude e longitude atuais do GPS do dispositivo
-  const handleSaveCompanyLocation = async () => {
+  // Confirmação para evitar alteração acidental da sede da empresa
+  const handleSaveCompanyLocation = () => {
     if (savingCompanyLocation) return;
 
     if (!companyLocation?.id) {
@@ -155,13 +155,32 @@ export default function PerfilAdm() {
       return;
     }
 
+    const confirmMsg =
+      "Deseja realmente atualizar a sede da empresa para a localização GPS atual deste dispositivo? Isso alterará o raio de tolerância do ponto de todos os colaboradores.";
+
+    if (Platform.OS === "web") {
+      if (window.confirm(confirmMsg)) {
+        executeSaveCompanyLocation();
+      }
+    } else {
+      Alert.alert(
+        "Confirmar Localização da Sede",
+        confirmMsg,
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Atualizar GPS", style: "destructive", onPress: executeSaveCompanyLocation },
+        ]
+      );
+    }
+  };
+
+  const executeSaveCompanyLocation = async () => {
     setSavingCompanyLocation(true);
     try {
       let latitude: number | null = null;
       let longitude: number | null = null;
 
       if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
-        // Fallback nativo do navegador para geolocalização precisa
         const pos: any = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
@@ -203,7 +222,6 @@ export default function PerfilAdm() {
           throw new Error(body.message || "Não foi possível salvar a localização.");
         }
 
-        // Atualiza o estado local com a Localização
         setCompanyLocation(body.data);
         const successMsg = "A localização da sede foi atualizada com sucesso!";
         if (Platform.OS === "web") {

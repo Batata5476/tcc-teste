@@ -102,7 +102,7 @@ export default function DadosTrabalhistas() {
 
         <View style={styles.cardFooter}>
           <View />
-          <Ionicons name="chevron-down" size={20} color="#1C1B1F" />
+          
         </View>
       </View>
 
@@ -134,7 +134,7 @@ export default function DadosTrabalhistas() {
               </View>
             </View>
           )}
-          <Ionicons name="chevron-down" size={20} color="#1C1B1F" />
+          
         </View>
       </View>
 
@@ -151,7 +151,7 @@ export default function DadosTrabalhistas() {
               <Text style={styles.darkBadgeText}>{data}</Text>
             </View>
           </View>
-          <Ionicons name="chevron-down" size={20} color="#1C1B1F" />
+          
         </View>
       </View>
     </SafeAreaView>

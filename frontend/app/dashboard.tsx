@@ -1,3 +1,4 @@
+import { getPointsConfig, PointsConfig } from '../services/points';
 import React, { useCallback, useState, useEffect } from "react";
 import {
   ActivityIndicator,
@@ -104,6 +105,7 @@ export default function Dashboard() {
     useState<UserDashboardPayload | null>(null);
   const [companyData, setCompanyData] =
     useState<CompanyDashboardPayload | null>(null);
+  const [pointsConfig, setPointsConfig] = useState<PointsConfig>({ enabled: true, meta: 500, pontosNormal: 100, pontosUrgente: 200 });
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
 
@@ -306,6 +308,7 @@ export default function Dashboard() {
   useFocusEffect(
     useCallback(() => {
       fetchDashboard();
+    getPointsConfig().then(setPointsConfig);
 
       // Impede voltar a telas anteriores quando o usuário já está no Dashboard
       const backSub = BackHandler.addEventListener("hardwareBackPress", () => true);
@@ -760,7 +763,7 @@ export default function Dashboard() {
           </Text>
         </View>
 
-        {Number(task.points) > 0 && (
+        {(pointsConfig?.enabled ?? true) && Number(task.points) > 0 && (
           <View style={styles.taskPointsBox}>
             <Ionicons name="star" size={11} color="#16A34A" style={{ marginRight: 2 }} />
             <Text style={styles.taskPoints}>+{task.points}</Text>

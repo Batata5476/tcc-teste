@@ -24,3 +24,4 @@ function resolveApiUrl(): string {
 }
 
 export const API_URL = resolveApiUrl();
+
