@@ -43,12 +43,20 @@ import { BackupModule } from './backup/backup.module';
         const dbSslEnv = configService.get<string>('DB_SSL');
         const useSsl = dbSslEnv !== undefined ? dbSslEnv === 'true' : Boolean(databaseUrl);
         const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-        const extraPool = {
-          max: isServerless ? 3 : 10,
-          connectionTimeoutMillis: 10000,
-          idleTimeoutMillis: 30000,
-          keepAlive: true,
-        };
+        const extraPool = isServerless
+          ? {
+              max: 2,
+              connectionTimeoutMillis: 15000,
+              idleTimeoutMillis: 4000,
+              allowExitOnIdle: true,
+              keepAlive: true,
+            }
+          : {
+              max: 10,
+              connectionTimeoutMillis: 10000,
+              idleTimeoutMillis: 30000,
+              keepAlive: true,
+            };
 
         if (databaseUrl) {
           return {

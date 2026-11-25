@@ -634,6 +634,10 @@ export default function Dashboard() {
         ),
       );
 
+      if (newStatus === "CONCLUIDA" || newStatus === "RECUSADA") {
+        setMeetingsCompletedOpen(true);
+      }
+
       // Sincroniza dados com o servidor
       fetchDashboard();
 
@@ -705,8 +709,16 @@ export default function Dashboard() {
   });
 
   const completedTasks = tasks.filter((t) => t.status === 1);
-  const openMeetings = meetings.filter((meeting) => meeting.status_reuniao !== "CONCLUIDA");
-  const completedMeetings = meetings.filter((meeting) => meeting.status_reuniao === "CONCLUIDA");
+  const openMeetings = meetings.filter(
+    (meeting) =>
+      meeting.status_reuniao !== "CONCLUIDA" &&
+      meeting.status_reuniao !== "RECUSADA",
+  );
+  const completedMeetings = meetings.filter(
+    (meeting) =>
+      meeting.status_reuniao === "CONCLUIDA" ||
+      meeting.status_reuniao === "RECUSADA",
+  );
 
   // ─── Renderização de item de tarefa ────────────────────────────────────────
 
@@ -885,6 +897,7 @@ export default function Dashboard() {
         ? meeting.data_reuniao.split("T")[0]
         : String(meeting.data_reuniao);
     const isCompleted = meeting.status_reuniao === "CONCLUIDA";
+    const isRejected = meeting.status_reuniao === "RECUSADA";
     const isScheduled = meeting.status_reuniao === "AGENDADA";
     const isPending = meeting.status_reuniao === "PENDENTE";
     const statusColor = isCompleted
@@ -912,6 +925,12 @@ export default function Dashboard() {
               style={[
                 styles.taskName,
                 isCompleted && { textDecorationLine: "line-through", color: "#64748B" },
+                isRejected && {
+                  textDecorationLine: "line-through",
+                  textDecorationColor: "#DC2626",
+                  color: "#DC2626",
+                  ...(Platform.OS === "web" ? ({ textDecorationThickness: "2px" } as any) : {}),
+                },
               ]}
               numberOfLines={2}
             >
@@ -922,7 +941,12 @@ export default function Dashboard() {
             {rawDate} às {meeting.horario_reuniao?.substring(0, 5) || "--:--"}
             {meeting.solicitante?.nome ? ` • ${meeting.solicitante.nome}` : ""}
           </Text>
-          {meeting.link_reuniao ? (
+          {isRejected && (
+            <Text style={{ fontSize: 11, fontWeight: "700", color: "#DC2626", marginTop: 3 }}>
+              Reunião recusada
+            </Text>
+          )}
+          {meeting.link_reuniao && !isRejected ? (
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => openMeetingLink(meeting.link_reuniao!)}
@@ -1017,6 +1041,10 @@ export default function Dashboard() {
             <View style={[styles.checkButton, { backgroundColor: "#D1FAE5" }]}>
               <Ionicons name="checkmark-done" size={18} color="#059669" />
             </View>
+          ) : isRejected ? (
+            <View style={[styles.checkButton, { backgroundColor: "#FEE2E2" }]}>
+              <Ionicons name="close" size={18} color="#DC2626" />
+            </View>
           ) : null}
         </View>
       </View>
@@ -1027,18 +1055,12 @@ export default function Dashboard() {
 
   return (
     <View style={styles.container}>
-      {/* Header com Saudação e Perfil com safe area para mobile */}
+      {/* Header com Saudação e Perfil */}
       <View
         style={[
           styles.header,
           {
-            paddingTop:
-              Platform.OS === "web"
-                ? 18
-                : Math.max(
-                    insets.top,
-                    Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 20
-                  ) + 10,
+            paddingTop: 14,
             paddingHorizontal: Math.max(insets.left, insets.right, 20),
           },
         ]}

@@ -78,18 +78,26 @@ export default function DadosTrabalhistas() {
     <SafeAreaView style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace("/dashboard");
-            }
-          }}
-        >
-          <Ionicons name="arrow-back" size={22} color="#1C1B1F" />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.headerButton}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/dashboard");
+              }
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#285A71" />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>Dados Trabalhistas</Text>
+            <Text style={styles.headerSubtitle}>Informações contratuais e jornada Coopera</Text>
+          </View>
+        </View>
       </View>
 
       {/* CARD SALÁRIO */}
@@ -166,15 +174,44 @@ const styles = StyleSheet.create({
 
   /* HEADER */
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 10,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
 
   headerButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
     justifyContent: "center",
+  },
+
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F2B3D",
+    letterSpacing: -0.4,
+  },
+
+  headerSubtitle: {
+    fontSize: 11.5,
+    color: "#64748B",
+    fontWeight: "500",
+    marginTop: 1,
   },
 
   /* CARDS */

@@ -47,6 +47,8 @@ export default function PerfilAdm() {
   const [medicalOpen, setMedicalOpen] = useState(false);
   const [pointsOpen, setPointsOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [applyingPreset, setApplyingPreset] = useState(false);
+  const [emotionsRefreshKey, setEmotionsRefreshKey] = useState(0);
   const [subject, setSubject] = useState("");
 
   const loadProfile = async () => {
@@ -225,6 +227,43 @@ export default function PerfilAdm() {
       setSavingCompanyLocation(false);
     }
   };
+  const handleApplyPresentationPreset = () => {
+    if (applyingPreset) return;
+
+    Alert.alert(
+      "Preset de Apresentação",
+      "Deseja popular automaticamente a empresa com dados completos para apresentação (colaboradores, tarefas do dia, reuniões em todos os status, gráficos de emoções, histórico médico, ponto e conversas no chat)?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Carregar Preset",
+          onPress: async () => {
+            try {
+              setApplyingPreset(true);
+              const res = await authenticatedFetch("/company/presentation-preset", {
+                method: "POST",
+              });
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                throw new Error(body.message || "Não foi possível aplicar o preset.");
+              }
+              await loadProfile();
+              setEmotionsRefreshKey((prev) => prev + 1);
+              Alert.alert(
+                "Preset Carregado! 🎉",
+                "Ambiente pronto para apresentação:\n• 5 colaboradores ativos (senha: Teste@123)\n• 13 tarefas (urgentes, em andamento, pendentes e concluídas)\n• 6 reuniões (pendentes, agendadas, concluída e recusada)\n• Gráficos de tarefas e emoções preenchidos\n• Conversas no chat e histórico médico prontos"
+              );
+            } catch (err: any) {
+              Alert.alert("Erro", err?.message || "Falha ao carregar o preset de apresentação.");
+            } finally {
+              setApplyingPreset(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Verifica se está definida a loc da empresa
   const companyLocationIsSet = companyLocation?.latitude !== null
     && companyLocation?.latitude !== undefined
@@ -274,7 +313,7 @@ export default function PerfilAdm() {
         />
 
         {/* GRÁFICO DE EMOÇÕES DA EQUIPE (totais agregados) */}
-        <EmotionsPieChartCard />
+        <EmotionsPieChartCard key={emotionsRefreshKey} />
 
         {/* SEÇÃO DE FERRAMENTAS & GESTÃO DA EMPRESA */}
         <View style={styles.sectionHeaderWrapper}>
@@ -354,6 +393,14 @@ export default function PerfilAdm() {
             title="Backup da empresa"
             subtitle="Segurança e restauração"
             onPress={() => setBackupOpen(true)}
+          />
+
+          <PerfilAction
+            icon="sparkles-outline"
+            title="Preset de apresentação"
+            subtitle={applyingPreset ? "Carregando cenário..." : "Popular tarefas, reuniões e dados"}
+            badge="Demo"
+            onPress={handleApplyPresentationPreset}
           />
         </View>
       </ScrollView>

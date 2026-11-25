@@ -90,18 +90,23 @@ function configureApp(app: INestApplication) {
   return config;
 }
 
-let cachedServer: any = null;
+let cachedServerPromise: Promise<any> | null = null;
 
 async function getServerlessHandler(): Promise<any> {
-  if (!cachedServer) {
-    const expressFn = getExpress();
-    const expressApp = expressFn();
-    const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
-    configureApp(app);
-    await app.init();
-    cachedServer = expressApp;
+  if (!cachedServerPromise) {
+    cachedServerPromise = (async () => {
+      const expressFn = getExpress();
+      const expressApp = expressFn();
+      const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
+      configureApp(app);
+      await app.init();
+      return expressApp;
+    })().catch((err) => {
+      cachedServerPromise = null;
+      throw err;
+    });
   }
-  return cachedServer;
+  return cachedServerPromise;
 }
 
 export default async function handler(req: Request, res: Response) {

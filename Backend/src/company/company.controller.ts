@@ -47,6 +47,13 @@ export class CompanyController {
     return this.companyService.updatePointsSettings(req.user.empresa_id, dto.pointsEnabled);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Post('presentation-preset')
+  applyPresentationPreset(@Request() req) {
+    return this.companyService.applyPresentationPreset(req.user.empresa_id, req.user.sub);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
   @Permissions('company.read')
   @Get(':id')

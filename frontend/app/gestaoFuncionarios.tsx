@@ -288,8 +288,9 @@ export default function GestaoFuncionariosScreen() {
             style={styles.backBtn}
             onPress={handleBack}
             activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="arrow-back" size={22} color="#285A71" />
+            <Ionicons name="arrow-back" size={20} color="#285A71" />
           </TouchableOpacity>
 
           <View style={styles.headerTitleBox}>
@@ -904,34 +905,36 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#F1F5F9",
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#ECEFD9",
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
   headerTitleBox: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 10,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "800",
-    color: "#285A71",
-    letterSpacing: -0.3,
+    color: "#0F2B3D",
+    letterSpacing: -0.4,
   },
   headerSubtitle: {
     fontSize: 11.5,
     color: "#64748B",
-    marginTop: 2,
+    fontWeight: "500",
+    marginTop: 1,
   },
   addBtn: {
     flexDirection: "row",

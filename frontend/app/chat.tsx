@@ -349,6 +349,8 @@ export default function ChatScreen() {
   const webFileInputRef = useRef<any>(null);
   const selectedChatRef = useRef<ChatListItem | null>(selectedChat);
   const hiddenMessageIdsRef = useRef<Set<string>>(new Set());
+  const pendingSendCountRef = useRef<number>(0);
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // Gerenciamento dinâmico de teclado para evitar que o input fique escondido
   useEffect(() => {
@@ -438,7 +440,7 @@ export default function ChatScreen() {
     let isPolling = false;
 
     const timer = setInterval(async () => {
-      if (isPolling) return;
+      if (isPolling || pendingSendCountRef.current > 0) return;
       if (
         Platform.OS === "web" &&
         typeof document !== "undefined" &&
@@ -458,7 +460,7 @@ export default function ChatScreen() {
           authenticatedFetch("/chat/conversations").catch(() => null),
         ]);
 
-        if (active?.id && msgRes && msgRes.ok) {
+        if (active?.id && msgRes && msgRes.ok && pendingSendCountRef.current === 0) {
           const body = await msgRes.json();
           const rawMessages: ChatMessage[] = (body.data ?? []).map((m: any) => ({
             ...m,
@@ -470,14 +472,21 @@ export default function ChatScreen() {
           setSelectedChat((prev) => {
             if (!prev || prev.id !== active.id) return prev;
             const prevMsgs = prev.messages || [];
+            const pendingOptimistic = prevMsgs.filter((m) =>
+              String(m.id).startsWith("temp-")
+            );
+            const mergedMessages =
+              pendingOptimistic.length > 0
+                ? [...freshMessages, ...pendingOptimistic]
+                : freshMessages;
             const hasDiff =
-              freshMessages.length !== prevMsgs.length ||
-              freshMessages.some(
+              mergedMessages.length !== prevMsgs.length ||
+              mergedMessages.some(
                 (fm, idx) =>
                   fm.id !== prevMsgs[idx]?.id || fm.text !== prevMsgs[idx]?.text
               );
             if (hasDiff) {
-              return { ...prev, messages: freshMessages };
+              return { ...prev, messages: mergedMessages };
             }
             return prev;
           });
@@ -927,7 +936,7 @@ export default function ChatScreen() {
       minute: "2-digit",
     });
 
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${Date.now()}-${Math.round(Math.random() * 1e5)}`;
     const tempMsg: ChatMessage = {
       id: tempId,
       text: textToSend,
@@ -960,45 +969,90 @@ export default function ChatScreen() {
       )
     );
 
-    try {
-      const res = await authenticatedFetch("/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          fk_id_chat: chatId,
-          conteudo_mensagens: textToSend,
-        }),
+    // Enfileira envios sequencialmente para evitar pico concorrente no pool serverless em digitação rápida
+    pendingSendCountRef.current += 1;
+    sendQueueRef.current = sendQueueRef.current
+      .catch(() => {})
+      .then(async () => {
+        const postOnce = () =>
+          authenticatedFetch("/chat", {
+            method: "POST",
+            body: JSON.stringify({
+              fk_id_chat: chatId,
+              conteudo_mensagens: textToSend,
+            }),
+          });
+
+        try {
+          let res: Response;
+          try {
+            res = await postOnce();
+            if (res.status >= 500) {
+              await new Promise((r) => setTimeout(r, 350));
+              res = await postOnce();
+            }
+          } catch {
+            await new Promise((r) => setTimeout(r, 350));
+            res = await postOnce();
+          }
+
+          if (res.ok) {
+            const body = await res.json();
+            const realId = body.data?.pk_id_mensagens
+              ? String(body.data.pk_id_mensagens)
+              : tempId;
+
+            // Substitui o tempId pelo ID real retornado do banco
+            setSelectedChat((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                messages: (prev.messages || []).map((m) =>
+                  m.id === tempId ? { ...m, id: realId } : m
+                ),
+              };
+            });
+          } else {
+            const err = await res.json().catch(() => ({}));
+            const rawMsg = Array.isArray(err.message)
+              ? err.message.join("\n")
+              : String(err.message || "");
+            const friendlyMsg =
+              !rawMsg || rawMsg.toLowerCase() === "internal server error"
+                ? "Não foi possível enviar a mensagem no momento. Tente novamente."
+                : rawMsg;
+
+            setSelectedChat((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    messages: (prev.messages || []).filter((m) => m.id !== tempId),
+                  }
+                : null
+            );
+            Alert.alert("Erro", friendlyMsg);
+          }
+        } catch (e) {
+          console.error(e);
+          setSelectedChat((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  messages: (prev.messages || []).filter((m) => m.id !== tempId),
+                }
+              : null
+          );
+          Alert.alert("Erro", "Não foi possível enviar a mensagem. Verifique sua conexão.");
+        } finally {
+          pendingSendCountRef.current = Math.max(0, pendingSendCountRef.current - 1);
+          if (pendingSendCountRef.current === 0) {
+            loadConversations();
+          }
+          setTimeout(() => {
+            inputRef.current?.focus();
+          }, 50);
+        }
       });
-
-      if (res.ok) {
-        const body = await res.json();
-        const realId = body.data?.pk_id_mensagens
-          ? String(body.data.pk_id_mensagens)
-          : tempId;
-
-        // Substitui o tempId pelo ID real retornado do banco
-        setSelectedChat((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            messages: (prev.messages || []).map((m) =>
-              m.id === tempId ? { ...m, id: realId } : m
-            ),
-          };
-        });
-
-        loadConversations();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        Alert.alert("Erro", err.message || "Não foi possível enviar a mensagem.");
-      }
-    } catch (e) {
-      console.error(e);
-      Alert.alert("Erro", "Erro ao enviar a mensagem.");
-    } finally {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
-    }
   };
 
   // ─── Renderização da Lista de Conversas / Contatos (Sidebar Esquerda) ─────────
