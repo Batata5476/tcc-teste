@@ -3,6 +3,7 @@ import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CreateSetorDto } from './dto/create-setor.dto';
+import { UpdatePointsSettingsDto } from './dto/update-points-settings.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions, Roles } from '../auth/authorization.decorators';
 import { RolesGuard } from '../auth/roles.guard';
@@ -31,6 +32,19 @@ export class CompanyController {
   @Post('sectors')
   createSector(@Body() dto: CreateSetorDto, @Request() req) {
     return this.companyService.createSector(req.user.empresa_id, dto.nome);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('points-settings')
+  getPointsSettings(@Request() req) {
+    return this.companyService.getPointsSettings(req.user.empresa_id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Patch('points-settings')
+  updatePointsSettings(@Body() dto: UpdatePointsSettingsDto, @Request() req) {
+    return this.companyService.updatePointsSettings(req.user.empresa_id, dto.pointsEnabled);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)

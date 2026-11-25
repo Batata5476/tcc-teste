@@ -30,6 +30,15 @@ export default function RootLayout() {
             -webkit-text-size-adjust: 100%;
             touch-action: manipulation;
           }
+          /* Remove o retângulo azul nativo de foco (focus ring / outline) do navegador nos inputs internos */
+          input, textarea, select,
+          input:focus, textarea:focus, select:focus,
+          input:focus-visible, textarea:focus-visible, select:focus-visible {
+            outline: none !important;
+            outline-width: 0 !important;
+            outline-style: none !important;
+            box-shadow: none !important;
+          }
           @media screen and (max-width: 768px) {
             input, textarea, select {
               font-size: 16px !important;

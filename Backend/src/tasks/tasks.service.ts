@@ -19,8 +19,7 @@ export class TasksService {
 
   private async validateTaskAccess(taskId: number, caller: any): Promise<FuncTarefa> {
     const callerId = caller.sub;
-    const isCompanyAdmin =
-      isAdminRole(caller.role);
+    const isCompanyAdmin = isAdminRole(caller.role);
 
     const relations = await this.funcTarefaRepository.find({
       where: { fk_id_tarefa: taskId },
@@ -54,12 +53,9 @@ export class TasksService {
     },
     caller: any,
   ) {
-    const isCompanyAdmin =
-      isAdminRole(caller.role);
-
+    const isCompanyAdmin = isAdminRole(caller.role);
     const callerId = caller.empresa_id;
 
-    // Se for funcionário, atribui automaticamente a ele mesmo
     if (!isCompanyAdmin) {
       data.fk_id_func = caller.sub;
     }
@@ -68,7 +64,6 @@ export class TasksService {
       throw new BadRequestException('É necessário informar o funcionário (fk_id_func) para atribuir a tarefa');
     }
 
-    // Validar se o funcionário existe e pertence à mesma empresa
     const employee = await this.userRepository.findOne({
       where: { id: data.fk_id_func },
     });
@@ -81,9 +76,6 @@ export class TasksService {
       throw new ForbiddenException('Este funcionário não pertence à sua empresa');
     }
 
-    // 1. Cria a tarefa
-    // Normaliza a data: trata string YYYY-MM-DD como data LOCAL para evitar
-    // conversão UTC que deslocaria o dia (ex: '2026-08-30' → 29T03:00Z em UTC-3)
     let validadeNormalizada: string;
     if (typeof data.validade_tarefa === 'string') {
       const match = data.validade_tarefa.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -102,12 +94,11 @@ export class TasksService {
       tipo_tarefa: data.tipo_tarefa,
       validade_tarefa: validadeNormalizada,
       prioridade_tarefa: data.prioridade_tarefa,
-      status_tarefa: 3, // 3 = Pendente por padrão
+      status_tarefa: 3,
     });
 
     const savedTask = await this.taskRepository.save(task);
 
-    // 2. Cria a associação em func_tarefa
     const funcTarefa = this.funcTarefaRepository.create({
       fk_id_func: data.fk_id_func,
       fk_cod_empresa: callerId,
@@ -147,8 +138,6 @@ export class TasksService {
             dueDateStr = rawDate.split('T')[0];
           } else {
             const d = new Date(rawDate);
-            // pg driver converte tipo DATE do Postgres para Date JS meianoite UTC (00:00:00.000Z).
-            // Usar getUTCFullYear/getUTCMonth/getUTCDate preserva exatamente o dia gravado no banco sem subtrair fuso local.
             const year = d.getUTCFullYear();
             const month = String(d.getUTCMonth() + 1).padStart(2, '0');
             const day = String(d.getUTCDate()).padStart(2, '0');
@@ -174,14 +163,12 @@ export class TasksService {
     };
   }
 
-  // Busca as associações de tarefas e funcionários filtrando pelo ID da empresa  
-    async findAllByCompany(companyId: number) {
+  async findAllByCompany(companyId: number) {
     const associations = await this.funcTarefaRepository.find({
       where: { fk_cod_empresa: companyId },
       relations: ['tarefa', 'funcionario'],
     });
-    
-    // // Filtra as associações válidas e mapeia os dados da tarefa formatados
+
     const tasks = associations
       .filter((assoc) => assoc.tarefa !== null)
       .map((assoc) => {
@@ -196,8 +183,7 @@ export class TasksService {
         } else {
           dueDateStr = '';
         }
-        
-        // Retorna os dados resumidos da tarefa e o nome do funcionário associado
+
         return {
           id: assoc.tarefa.pk_id_tarefas,
           name: assoc.tarefa.tipo_tarefa,
@@ -226,17 +212,13 @@ export class TasksService {
       throw new NotFoundException(`Tarefa com ID ${taskId} não encontrada`);
     }
 
-    const isCompanyAdmin =
-      isAdminRole(caller.role);
+    const isCompanyAdmin = isAdminRole(caller.role);
 
-    // Regras de transição de status
-    // Funcionários: 3→2, 2→1, 3→1 (conclusão direta permitida)
-    // Empresa: qualquer transição exceto re-abrir (1→3)
     if (!isCompanyAdmin) {
       const currentStatus = task.status_tarefa;
       const isAllowed =
-        (currentStatus === 3 && (status === 2 || status === 1)) || // Pendente -> Em andamento ou Concluída
-        (currentStatus === 2 && status === 1);                      // Em andamento -> Concluída
+        (currentStatus === 3 && (status === 2 || status === 1)) ||
+        (currentStatus === 2 && status === 1);
 
       if (!isAllowed) {
         throw new ForbiddenException(
@@ -244,7 +226,6 @@ export class TasksService {
         );
       }
     } else {
-      // Empresa pode mudar qualquer status menos re-abrir (1→3)
       if (task.status_tarefa === 1 && status === 3) {
         throw new ForbiddenException('Não é possível reabrir uma tarefa já concluída');
       }
@@ -254,24 +235,51 @@ export class TasksService {
     task.status_tarefa = status;
     const updated = await this.taskRepository.save(task);
 
-    // Se o novo status for 1 (Concluída) e antes não era 1, incrementa 100 pontos para o usuário atribuído
+    // Respeita a configuração do sistema de pontos da empresa antes de creditar +100 pontos
+    let pointsAwarded = 0;
     if (status === 1 && previousStatus !== 1) {
-      const relation = await this.funcTarefaRepository.findOne({
-        where: { fk_id_tarefa: taskId },
-      });
-      if (relation && relation.fk_id_func) {
-        await this.userRepository.increment(
-          { id: relation.fk_id_func },
-          'pontos_acumulados',
-          100,
-        );
+      let pointsEnabled = true;
+      const manager: any = (this.taskRepository as any).manager;
+      if (manager && typeof manager.query === 'function' && caller?.empresa_id) {
+        try {
+          await manager.query(`
+            CREATE TABLE IF NOT EXISTS empresa_config_pontos (
+              empresa_id INT PRIMARY KEY REFERENCES empresa(id) ON DELETE CASCADE,
+              pontos_ativos BOOLEAN NOT NULL DEFAULT TRUE,
+              atualizado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+          `);
+          const cfgRows = await manager.query(
+            `SELECT pontos_ativos FROM empresa_config_pontos WHERE empresa_id = $1 LIMIT 1`,
+            [caller.empresa_id],
+          );
+          if (cfgRows && cfgRows.length > 0) {
+            pointsEnabled = Boolean(cfgRows[0].pontos_ativos);
+          }
+        } catch {
+          pointsEnabled = true;
+        }
+      }
+
+      if (pointsEnabled) {
+        const relation = await this.funcTarefaRepository.findOne({
+          where: { fk_id_tarefa: taskId },
+        });
+        if (relation && relation.fk_id_func) {
+          await this.userRepository.increment(
+            { id: relation.fk_id_func },
+            'pontos_acumulados',
+            100,
+          );
+          pointsAwarded = 100;
+        }
       }
     }
 
     return {
       status: 'success',
       message: 'Status da tarefa atualizado com sucesso',
-      data: updated,
+      data: { ...updated, pointsAwarded },
     };
   }
 
@@ -301,8 +309,7 @@ export class TasksService {
   }
 
   async remove(id: number, caller: any) {
-    const isCompanyAdmin =
-      isAdminRole(caller.role);
+    const isCompanyAdmin = isAdminRole(caller.role);
 
     if (!isCompanyAdmin) {
       throw new ForbiddenException('Apenas empresas podem excluir tarefas');

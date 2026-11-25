@@ -28,6 +28,7 @@ import { API_URL } from "../services/config";
 import PerfilMeetingModal from "../components/perfil/PerfilMeetingModal";
 import CalendarDatePicker from "../components/common/CalendarDatePicker";
 import TimePickerInput from "../components/common/TimePickerInput";
+import { getCachedPointsEnabled, syncPointsEnabledFromServer } from "../services/points";
 
 const cooperaLogo = require("../assets/coopera_logo.png");
 
@@ -106,6 +107,7 @@ export default function Dashboard() {
     useState<CompanyDashboardPayload | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [pointsEnabled, setPointsEnabled] = useState<boolean>(true);
 
   // Estados de reuniões
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
@@ -197,6 +199,9 @@ export default function Dashboard() {
 
     try {
       setLoading(true);
+
+      getCachedPointsEnabled().then(setPointsEnabled);
+      syncPointsEnabledFromServer().then(setPointsEnabled);
 
       const { getUserType } = await import("../services/auth");
       const sessionType = await getUserType();
@@ -346,6 +351,7 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
+        const resBody = await response.json().catch(() => ({}));
         setTasks((prevTasks) =>
           prevTasks.map((t) =>
             t.id === taskId ? { ...t, status: newStatus } : t
@@ -353,10 +359,22 @@ export default function Dashboard() {
         );
 
         if (newStatus === 1) {
-          Alert.alert(
-            "Parabéns!",
-            "Você concluiu a tarefa com sucesso e acumulou +100 pontos!"
-          );
+          const awarded =
+            resBody?.data?.pointsAwarded !== undefined
+              ? Number(resBody.data.pointsAwarded) > 0 && pointsEnabled
+              : pointsEnabled;
+
+          if (awarded) {
+            Alert.alert(
+              "Parabéns!",
+              "Você concluiu a tarefa com sucesso e acumulou +100 pontos!"
+            );
+          } else {
+            Alert.alert(
+              "Muito obrigado! 👏",
+              "Tarefa concluída com sucesso! Agradecemos sua dedicação e empenho na entrega de hoje."
+            );
+          }
         } else {
           const label = newStatus === 2 ? "Em andamento" : "Pendente";
 
@@ -765,7 +783,7 @@ export default function Dashboard() {
           </Text>
         </View>
 
-        {Number(task.points) > 0 && (
+        {pointsEnabled && Number(task.points) > 0 && (
           <View style={styles.taskPointsBox}>
             <Ionicons name="star" size={11} color="#16A34A" style={{ marginRight: 2 }} />
             <Text style={styles.taskPoints}>+{task.points}</Text>

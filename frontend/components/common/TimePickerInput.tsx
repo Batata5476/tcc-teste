@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import {
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -23,6 +24,8 @@ export default function TimePickerInput({
   label = "Horário",
   placeholder = "14:00",
 }: TimePickerInputProps) {
+  const [focused, setFocused] = useState(false);
+
   const handleTextChange = (text: string) => {
     // Remove tudo que não for dígito
     const digits = text.replace(/\D/g, "").slice(0, 4);
@@ -57,12 +60,17 @@ export default function TimePickerInput({
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
 
-      <View style={styles.inputWrapper}>
+      <View style={[styles.inputWrapper, focused && styles.inputWrapperFocused]}>
         <Ionicons name="time-outline" size={18} color="#285A71" style={styles.icon} />
         <TextInput
-          style={styles.textInput}
+          style={[
+            styles.textInput,
+            Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null,
+          ]}
           value={value}
           onChangeText={handleTextChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           placeholder={placeholder}
           placeholderTextColor="#94A3B8"
           keyboardType="numeric"
@@ -108,9 +116,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#ECEFD9",
     height: 48,
     borderRadius: 12,
-    borderWidth: 0.5,
+    borderWidth: 0.8,
     borderColor: "#285A71",
     paddingHorizontal: 10,
+  },
+  inputWrapperFocused: {
+    borderWidth: 1.8,
+    borderColor: "#285A71",
+    backgroundColor: "#F6F8EC",
   },
   icon: {
     marginRight: 6,

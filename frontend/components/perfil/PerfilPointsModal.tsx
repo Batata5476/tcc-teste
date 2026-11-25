@@ -1,9 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Alert,
   Modal,
-  Platform,
   StyleSheet,
   Switch,
   Text,
@@ -11,26 +10,50 @@ import {
   View,
 } from "react-native";
 import PerfilButton from "./PerfilButton";
+import {
+  getCachedPointsEnabled,
+  syncPointsEnabledFromServer,
+  updatePointsEnabledSetting,
+} from "../../services/points";
 
 type PerfilPointsModalProps = {
   visible: boolean;
   onClose: () => void;
   pontos?: number;
+  onStatusChange?: (enabled: boolean) => void;
 };
 
 export default function PerfilPointsModal({
   visible,
   onClose,
   pontos = 0,
+  onStatusChange,
 }: PerfilPointsModalProps) {
   const [pointsEnabled, setPointsEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const handleToggleSwitch = (value: boolean) => {
+  useEffect(() => {
+    if (visible) {
+      getCachedPointsEnabled().then(setPointsEnabled);
+      syncPointsEnabledFromServer().then(setPointsEnabled);
+    }
+  }, [visible]);
+
+  const handleToggleSwitch = async (value: boolean) => {
+    if (saving) return;
     setPointsEnabled(value);
-    const msg = value
-      ? "Pontuação ativada! Atividades concluídas gerarão pontos normalmente."
-      : "Pontuação desativada. As atividades concluídas não acumularão pontos.";
-    Alert.alert("Sistema de Pontuações", msg);
+    setSaving(true);
+    try {
+      const saved = await updatePointsEnabledSetting(value);
+      setPointsEnabled(saved);
+      onStatusChange?.(saved);
+      const msg = saved
+        ? "Pontuação ativada! As tarefas voltam a exibir e somar +100 pontos ao concluir."
+        : "Pontuação desativada! Os pontos foram ocultados das tarefas e as conclusões exibirão uma mensagem de agradecimento sem somar pontos.";
+      Alert.alert("Sistema de Pontuações", msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -55,7 +78,7 @@ export default function PerfilPointsModal({
           </View>
 
           {/* Saldo de Pontos */}
-          <View style={styles.pointsCard}>
+          <View style={[styles.pointsCard, !pointsEnabled && { opacity: 0.65 }]}>
             <Text style={styles.pointsLabel}>Seu Saldo Atual</Text>
             <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6 }}>
               <Text style={styles.pointsValue}>{pontos}</Text>
@@ -68,19 +91,22 @@ export default function PerfilPointsModal({
             <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={styles.switchTitle}>Pontuar Atividades Concluídas</Text>
               <Text style={styles.switchSub}>
-                Gera pontos automaticamente ao finalizar tarefas do dia.
+                {pointsEnabled
+                  ? "Gera pontos automaticamente ao finalizar tarefas do dia."
+                  : "Desativado: oculta os pontos nas tarefas e agradece sem pontuar."}
               </Text>
             </View>
             <Switch
               trackColor={{ false: "#CBD5E1", true: "#285A71" }}
               thumbColor={pointsEnabled ? "#ECEFDA" : "#F1F5F9"}
               onValueChange={handleToggleSwitch}
+              disabled={saving}
               value={pointsEnabled}
             />
           </View>
 
           {/* Regras */}
-          <View style={styles.rulesContainer}>
+          <View style={[styles.rulesContainer, !pointsEnabled && { opacity: 0.55 }]}>
             <Text style={styles.rulesHeader}>Tabela de Pontuação:</Text>
             <View style={styles.ruleItem}>
               <Ionicons name="alert-circle-outline" size={16} color="#D97706" />
@@ -112,6 +138,7 @@ const styles = StyleSheet.create({
   },
   modalBox: {
     width: "100%",
+    maxWidth: 420,
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 20,

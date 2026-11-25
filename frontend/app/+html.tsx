@@ -29,6 +29,15 @@ export default function Root({ children }: PropsWithChildren) {
                 width: 100%;
                 height: 100%;
               }
+              /* Remove o retângulo azul nativo de foco (focus ring / outline) do navegador */
+              input, textarea, select,
+              input:focus, textarea:focus, select:focus,
+              input:focus-visible, textarea:focus-visible, select:focus-visible {
+                outline: none !important;
+                outline-width: 0 !important;
+                outline-style: none !important;
+                box-shadow: none !important;
+              }
               /* Impede o Safari do iPhone de dar auto-zoom ao focar em campos de texto (< 16px) */
               @media screen and (max-width: 768px) {
                 input, textarea, select {

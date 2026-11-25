@@ -124,14 +124,19 @@ export default function CadastroFuncionario() {
       if (response.ok) {
         let codeDetails = undefined;
         if (body._dev_?.code) {
-          codeDetails = `Código de Ativação: ${body._dev_.code}`;
+          codeDetails = body._dev_.token
+            ? `Código: ${body._dev_.code} | Token: ${body._dev_.token}`
+            : `Código de Ativação: ${body._dev_.code}`;
         }
 
+        const emailDispatched = body.emailSent !== false;
         setFeedback({
           visible: true,
-          type: "success",
-          title: "Cadastro Concluído! ",
-          message: `O colaborador "${nome.trim()}" foi registrado com sucesso.`,
+          type: emailDispatched ? "success" : "info",
+          title: emailDispatched ? "Cadastro Concluído!" : "Colaborador Cadastrado!",
+          message: emailDispatched
+            ? `O colaborador "${nome.trim()}" foi registrado e o convite de primeiro acesso foi enviado para ${email.trim()}.`
+            : `O colaborador "${nome.trim()}" foi registrado no banco, porém o envio de e-mail não está configurado no servidor. Copie os dados abaixo para o primeiro acesso:`,
           details: codeDetails,
         });
 

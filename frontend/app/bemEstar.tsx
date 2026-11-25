@@ -264,6 +264,7 @@ export function Emotions() {
             text="solicitar reunião"
             onPress={() => setModalVisible(true)}
             showAdd={false}
+            style={styles.actionCardItem}
           />
 
           <PerfilAction
@@ -271,6 +272,7 @@ export function Emotions() {
             text="relatar ocorrência"
             onPress={() => setOccurrenceModalVisible(true)}
             showAdd={false}
+            style={styles.actionCardItem}
           />
         </View>
       </ScrollView>
@@ -320,17 +322,33 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     width: "90%",
+    gap: 10,
   },
 
   emotionButton: {
-    padding: 5,
-    borderRadius: 50,
+    flex: 1,
+    aspectRatio: 1,
+    maxWidth: 64,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
+    shadowColor: "#0F2B3D",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
 
   emotionButtonSelected: {
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F0F7FA",
     borderWidth: 2,
     borderColor: "#285A71",
+    shadowOpacity: 0.12,
+    elevation: 3,
   },
 
   emotionButtonDisabled: {
@@ -384,8 +402,8 @@ const styles = StyleSheet.create({
   },
 
   emotionImage: {
-    width: 50,
-    height: 50,
+    width: 40,
+    height: 40,
     resizeMode: "contain",
   },
 
@@ -420,11 +438,16 @@ const styles = StyleSheet.create({
   },
 
   actionsContainer: {
-    marginTop: 20,
+    marginTop: 22,
     marginHorizontal: 20,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
+    gap: 14,
+  },
+
+  actionCardItem: {
+    flexBasis: "46%",
   },
 });
 

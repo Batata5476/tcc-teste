@@ -13,7 +13,6 @@ import { AuditService } from '../audit/audit.service';
 import { isAdminRole, ROLES } from '../auth/authorization.constants';
 import { MailService } from '../mail/mail.services';
 
-
 @Injectable()
 export class UsersService {
   constructor(
@@ -49,7 +48,6 @@ export class UsersService {
       throw new NotFoundException(`Usuário com ID ${targetUserId} não encontrado`);
     }
 
-    // Admins da mesma empresa têm acesso. Usuários comuns só têm acesso a si mesmos.
     const isCompanyAdmin = isAdminRole(caller.role);
 
     if (isCompanyAdmin) {
@@ -87,7 +85,6 @@ export class UsersService {
       relations: ['role', 'setor', 'permissions'],
     });
 
-    // Filtra usuários que foram deletados logicamente (Soft Delete) e remove campos sensíveis
     const activeUsers = users
       .filter((u) => u.status !== 'DELETED')
       .map((u) => this.sanitizeUser(u));
@@ -100,7 +97,6 @@ export class UsersService {
 
   async findOne(id: number, caller: any) {
     const user = await this.validateUserAccess(id, caller);
-    // Recarrega relações
     const userWithRelations = await this.usersRepository.findOne({
       where: { id: user.id },
       relations: ['role', 'setor', 'permissions'],
@@ -126,7 +122,6 @@ export class UsersService {
     const cleanCpf = createUserDto.cpf.replace(/\D/g, '');
     const cleanEmail = createUserDto.email.trim().toLowerCase();
 
-    // Verificar se o CPF já está em uso (incluindo registros arquivados para evitar violação de UNIQUE)
     const existingCpf = await this.usersRepository.findOne({
       where: { cpf: cleanCpf },
     });
@@ -138,7 +133,6 @@ export class UsersService {
       );
     }
 
-    // Verificar se o Email já está em uso (incluindo registros arquivados)
     const existingEmail = await this.usersRepository.findOne({
       where: { email: cleanEmail },
     });
@@ -150,7 +144,6 @@ export class UsersService {
       );
     }
 
-    // Buscar Role pelo nome
     const role = await this.roleRepository.findOne({
       where: { nome: createUserDto.role_name },
     });
@@ -158,7 +151,6 @@ export class UsersService {
       throw new NotFoundException(`Role ${createUserDto.role_name} não encontrada`);
     }
 
-    // Buscar Setor
     const setor = await this.setorRepository.findOne({
       where: { id: createUserDto.setor_id, empresa_id: caller.empresa_id },
     });
@@ -166,12 +158,10 @@ export class UsersService {
       throw new NotFoundException(`Setor de ID ${createUserDto.setor_id} não encontrado na sua empresa`);
     }
 
-    // Gera código de ativação e token temporário de primeiro acesso
     const rawToken = this.generateRandomCode();
     const hashedToken = await bcrypt.hash(rawToken, 10);
     const code = this.generateRandomCode();
 
-    // Mapeia permissões adicionais se fornecidas
     let permissions: Permission[] = [];
     if (createUserDto.permissions && createUserDto.permissions.length > 0) {
       permissions = await this.permissionRepository.find({
@@ -179,7 +169,6 @@ export class UsersService {
       });
     }
 
-    // Senha temporária aleatória e grande (será redefinida no primeiro acesso)
     const dummyPassword = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
 
     const user = this.usersRepository.create({
@@ -195,7 +184,7 @@ export class UsersService {
       primeiro_acesso: true,
       activation_code: code,
       token: hashedToken,
-      token_expiracao: new Date(Date.now() + 48 * 60 * 60 * 1000), // 48h
+      token_expiracao: new Date(Date.now() + 48 * 60 * 60 * 1000),
       telefone: createUserDto.telefone ? createUserDto.telefone.replace(/\D/g, '') : null,
       foto: createUserDto.foto || null,
       foto_func: createUserDto.foto || null,
@@ -204,8 +193,8 @@ export class UsersService {
 
     const saved = await this.usersRepository.save(user);
 
-    // Dispara o email de boas vindas e primeiro acesso
-    await this.mailService.sendFirstAccessEmail(
+    // Dispara o e-mail de boas-vindas e verifica se o envio realmente ocorreu na Brevo
+    const emailSent = await this.mailService.sendFirstAccessEmail(
       saved.email,
       saved.nome,
       code,
@@ -214,7 +203,18 @@ export class UsersService {
 
     return {
       status: 'success',
-      message: 'Funcionário cadastrado com sucesso. As instruções de ativação serão enviadas por e-mail.',
+      emailSent,
+      message: emailSent
+        ? 'Funcionário cadastrado com sucesso! O convite de ativação foi enviado por e-mail.'
+        : 'Funcionário cadastrado com sucesso, porém o envio de e-mail não está ativo no servidor. Copie os dados abaixo para o primeiro acesso.',
+      ...(emailSent
+        ? {}
+        : {
+            _dev_: {
+              code,
+              token: rawToken,
+            },
+          }),
       data: this.sanitizeUser(saved),
     };
   }
@@ -223,7 +223,6 @@ export class UsersService {
     const targetUser = await this.validateUserAccess(id, caller);
     const isCompanyAdmin = isAdminRole(caller.role);
 
-    // Se for usuário comum, só pode editar campos específicos (nome, email, foto, senha, telefone)
     if (!isCompanyAdmin) {
       if (
         updateUserDto.role_name !== undefined ||
@@ -236,7 +235,6 @@ export class UsersService {
       }
     }
 
-    // Atualizar dados cadastrais
     if (updateUserDto.nome !== undefined) targetUser.nome = updateUserDto.nome.trim();
     if (updateUserDto.email !== undefined) targetUser.email = updateUserDto.email.trim().toLowerCase();
     if (updateUserDto.foto !== undefined) {
@@ -251,7 +249,6 @@ export class UsersService {
     if (updateUserDto.cargo !== undefined) targetUser.cargo = updateUserDto.cargo ? updateUserDto.cargo.trim() : null;
 
     if (updateUserDto.senha !== undefined) {
-      // Validar senha
       const minLength = updateUserDto.senha.length >= 8;
       const hasUpper = /[A-Z]/.test(updateUserDto.senha);
       const hasLower = /[a-z]/.test(updateUserDto.senha);
@@ -263,7 +260,6 @@ export class UsersService {
       targetUser.senha = await bcrypt.hash(updateUserDto.senha, 10);
     }
 
-    // Administrador atualizando dados sensíveis
     if (isCompanyAdmin) {
       if (updateUserDto.status !== undefined) {
         if (targetUser.id === caller.sub && updateUserDto.status !== 'ACTIVE') {
@@ -305,7 +301,6 @@ export class UsersService {
 
     const saved = await this.usersRepository.save(targetUser);
 
-    // Auditoria
     await this.auditService.log({
       usuario_id: caller.sub,
       empresa_id: caller.empresa_id,
@@ -335,11 +330,9 @@ export class UsersService {
 
     const user = await this.validateUserAccess(id, caller);
 
-    // Soft Delete: Define status como DELETED
     user.status = 'DELETED';
     await this.usersRepository.save(user);
 
-    // Auditoria
     await this.auditService.log({
       usuario_id: caller.sub,
       empresa_id: caller.empresa_id,

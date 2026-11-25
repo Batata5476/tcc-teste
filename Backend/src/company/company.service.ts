@@ -93,6 +93,51 @@ export class CompanyService {
     };
   }
 
+  private pointsTableReady = false;
+
+  private async ensurePointsConfigTable(): Promise<void> {
+    if (this.pointsTableReady) return;
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS empresa_config_pontos (
+        empresa_id INT PRIMARY KEY REFERENCES empresa(id) ON DELETE CASCADE,
+        pontos_ativos BOOLEAN NOT NULL DEFAULT TRUE,
+        atualizado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    this.pointsTableReady = true;
+  }
+
+  async getPointsSettings(empresaId: number) {
+    await this.ensurePointsConfigTable();
+    const rows = await this.dataSource.query(
+      `SELECT pontos_ativos FROM empresa_config_pontos WHERE empresa_id = $1 LIMIT 1`,
+      [empresaId],
+    );
+    const pointsEnabled = rows && rows.length > 0 ? Boolean(rows[0].pontos_ativos) : true;
+    return {
+      status: 'success',
+      data: { pointsEnabled },
+    };
+  }
+
+  async updatePointsSettings(empresaId: number, pointsEnabled: boolean) {
+    await this.ensurePointsConfigTable();
+    await this.dataSource.query(
+      `INSERT INTO empresa_config_pontos (empresa_id, pontos_ativos, atualizado_em)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (empresa_id)
+       DO UPDATE SET pontos_ativos = EXCLUDED.pontos_ativos, atualizado_em = NOW()`,
+      [empresaId, Boolean(pointsEnabled)],
+    );
+    return {
+      status: 'success',
+      message: pointsEnabled
+        ? 'Sistema de pontos ativado com sucesso'
+        : 'Sistema de pontos desativado com sucesso',
+      data: { pointsEnabled: Boolean(pointsEnabled) },
+    };
+  }
+
   async findAll(empresaId: number) {
     const companies = await this.companyRepository.find({
       where: { id: empresaId },
