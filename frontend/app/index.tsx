@@ -657,21 +657,19 @@ export default function LoginScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  style={s.firstAccessBtn}
+                  onPress={() => setModalStep("firstAccess_credentials")}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.firstAccessText}>Primeiro acesso</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={s.registerCompanyLink}
                   onPress={() => router.push("/cadastroEmpresa")}
                   activeOpacity={0.8}
                 >
                   <Text style={s.registerCompanyText}>Cadastrar nova empresa</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={{ marginTop: 12, alignItems: "center" }}
-                  onPress={() => setModalStep("firstAccess_credentials")}
-                  activeOpacity={0.8}
-                >
-                  <Text style={{ color: "#64748B", fontSize: 13, textDecorationLine: "underline" }}>
-                    Primeiro acesso? Ative sua conta aqui
-                  </Text>
                 </TouchableOpacity>
               </View>
             </View>

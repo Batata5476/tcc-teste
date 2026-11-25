@@ -90,7 +90,9 @@ export default function RootLayout() {
         <Stack.Screen
           name="dashboard"
           options={{
-            headerShown: false,
+            title: "Dashboard",
+            headerBackVisible: false,
+            headerLeft: () => null,
             gestureEnabled: false,
           }}
         />
