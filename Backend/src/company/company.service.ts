@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -9,6 +9,7 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { User } from '../users/entities/user.entity';
 import { Role } from '../users/entities/role.entity';
 import { ROLES } from '../auth/authorization.constants';
+import { MailService } from '../mail/mail.services';
 
 const DEFAULT_COMPANY_SECTORS = [
   'Geral',
@@ -42,6 +43,7 @@ export class CompanyService {
     @InjectRepository(Role)
     private roleRepository: Repository<Role>,
     private dataSource: DataSource,
+    @Optional() private mailService?: MailService,
   ) {}
 
   private validatePasswordPolicy(password: string) {
@@ -147,6 +149,18 @@ export class CompanyService {
         : 'Sistema de pontos desativado com sucesso',
       data: { pointsEnabled: Boolean(pointsEnabled) },
     };
+  }
+
+  async sendTestMailForAdmin(adminUserId: number, recipientEmail?: string) {
+    if (!this.mailService) {
+      throw new BadRequestException('Serviço de e-mail indisponível');
+    }
+    const adminUser = await this.userRepository.findOne({ where: { id: adminUserId } });
+    const targetEmail = (recipientEmail || adminUser?.email || '').trim().toLowerCase();
+    if (!targetEmail) {
+      throw new BadRequestException('Informe um e-mail destinatário válido');
+    }
+    return this.mailService.sendDiagnosticTestEmail(targetEmail, adminUser?.nome || 'Administrador');
   }
 
   async applyPresentationPreset(empresaId: number, adminUserId: number) {

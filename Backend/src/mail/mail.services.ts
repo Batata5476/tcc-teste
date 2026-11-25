@@ -1,22 +1,221 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+
+type ResolvedMailCredentials = {
+  apiKey: string;
+  senderEmail: string;
+  senderName: string;
+  source: 'env' | 'database';
+};
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
+  private tableReady = false;
+  private cachedDbCreds: { value: ResolvedMailCredentials | null; expiresAt: number } | null = null;
 
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    @Optional() private dataSource?: DataSource,
+  ) {}
+
+  private getEncryptionKey(): Buffer {
+    const secret =
+      this.configService.get<string>('JWT_SECRET') ||
+      process.env.JWT_SECRET ||
+      'coopera-fallback-mail-secret-key-32chars';
+    return scryptSync(secret, 'coopera-mail-config-v1', 32);
+  }
+
+  private encryptSecret(plainText: string): string {
+    const iv = randomBytes(12);
+    const key = this.getEncryptionKey();
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+  }
+
+  private decryptSecret(payload: string): string | null {
+    try {
+      const [ivHex, tagHex, dataHex] = String(payload || '').split(':');
+      if (!ivHex || !tagHex || !dataHex) return null;
+      const key = this.getEncryptionKey();
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+      decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+      const decrypted = Buffer.concat([
+        decipher.update(Buffer.from(dataHex, 'hex')),
+        decipher.final(),
+      ]);
+      return decrypted.toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  private async ensureMailConfigTable(): Promise<boolean> {
+    if (!this.dataSource) return false;
+    if (this.tableReady) return true;
+    try {
+      await this.dataSource.query(`
+        CREATE TABLE IF NOT EXISTS sistema_config_email (
+          id INT PRIMARY KEY DEFAULT 1,
+          encrypted_api_key TEXT NOT NULL,
+          sender_email VARCHAR(120) NOT NULL,
+          sender_name VARCHAR(100) NOT NULL DEFAULT 'Sistema Coopera',
+          atualizado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      this.tableReady = true;
+      return true;
+    } catch (err: any) {
+      this.logger.warn(`Não foi possível inicializar sistema_config_email: ${err?.message}`);
+      return false;
+    }
+  }
+
+  private async resolveCredentials(): Promise<ResolvedMailCredentials | null> {
+    const envApiKey = this.configService.get<string>('BREVO_API_KEY')?.trim();
+    const envSenderEmail = this.configService.get<string>('BREVO_SENDER_EMAIL')?.trim();
+    const envSenderName =
+      this.configService.get<string>('BREVO_SENDER_NAME')?.trim() || 'Sistema Coopera';
+
+    if (envApiKey && envSenderEmail) {
+      return {
+        apiKey: envApiKey,
+        senderEmail: envSenderEmail,
+        senderName: envSenderName,
+        source: 'env',
+      };
+    }
+
+    if (this.cachedDbCreds && Date.now() < this.cachedDbCreds.expiresAt) {
+      return this.cachedDbCreds.value;
+    }
+
+    const ready = await this.ensureMailConfigTable();
+    if (!ready || !this.dataSource) {
+      return null;
+    }
+
+    try {
+      const rows = await this.dataSource.query(
+        `SELECT encrypted_api_key, sender_email, sender_name FROM sistema_config_email WHERE id = 1 LIMIT 1`,
+      );
+      if (!rows || rows.length === 0) {
+        this.cachedDbCreds = { value: null, expiresAt: Date.now() + 15000 };
+        return null;
+      }
+
+      const decryptedKey = this.decryptSecret(rows[0].encrypted_api_key);
+      if (!decryptedKey || !rows[0].sender_email) {
+        this.cachedDbCreds = { value: null, expiresAt: Date.now() + 15000 };
+        return null;
+      }
+
+      const resolved: ResolvedMailCredentials = {
+        apiKey: decryptedKey,
+        senderEmail: rows[0].sender_email,
+        senderName: rows[0].sender_name || 'Sistema Coopera',
+        source: 'database',
+      };
+      this.cachedDbCreds = { value: resolved, expiresAt: Date.now() + 60000 };
+      return resolved;
+    } catch (err: any) {
+      this.logger.warn(`Falha ao consultar sistema_config_email: ${err?.message}`);
+      return null;
+    }
+  }
+
+  async getMailSettingsStatus() {
+    const creds = await this.resolveCredentials();
+    if (!creds) {
+      return {
+        status: 'success',
+        data: {
+          configured: false,
+          senderEmail: null,
+          senderName: 'Sistema Coopera',
+          source: 'none',
+        },
+      };
+    }
+
+    return {
+      status: 'success',
+      data: {
+        configured: true,
+        senderEmail: creds.senderEmail,
+        senderName: creds.senderName,
+        source: creds.source,
+      },
+    };
+  }
+
+  async saveMailSettings(input: { apiKey: string; senderEmail: string; senderName?: string }) {
+    const cleanKey = String(input.apiKey || '').trim();
+    const cleanEmail = String(input.senderEmail || '').trim().toLowerCase();
+    const cleanName = String(input.senderName || 'Sistema Coopera').trim() || 'Sistema Coopera';
+
+    if (!cleanKey || !cleanEmail) {
+      throw new BadRequestException('BREVO_API_KEY e e-mail remetente são obrigatórios.');
+    }
+
+    const ready = await this.ensureMailConfigTable();
+    if (!ready || !this.dataSource) {
+      throw new BadRequestException('Banco de dados indisponível para salvar configuração de e-mail.');
+    }
+
+    const encrypted = this.encryptSecret(cleanKey);
+    await this.dataSource.query(
+      `INSERT INTO sistema_config_email (id, encrypted_api_key, sender_email, sender_name, atualizado_em)
+       VALUES (1, $1, $2, $3, NOW())
+       ON CONFLICT (id)
+       DO UPDATE SET
+         encrypted_api_key = EXCLUDED.encrypted_api_key,
+         sender_email = EXCLUDED.sender_email,
+         sender_name = EXCLUDED.sender_name,
+         atualizado_em = NOW()`,
+      [encrypted, cleanEmail, cleanName],
+    );
+
+    this.cachedDbCreds = {
+      value: {
+        apiKey: cleanKey,
+        senderEmail: cleanEmail,
+        senderName: cleanName,
+        source: 'database',
+      },
+      expiresAt: Date.now() + 60000,
+    };
+
+    return {
+      status: 'success',
+      message: 'Configuração de envio de e-mail salva com sucesso no servidor.',
+      data: {
+        configured: true,
+        senderEmail: cleanEmail,
+        senderName: cleanName,
+        source: 'database',
+      },
+    };
+  }
 
   /**
    * Função base: faz o disparo HTTP REST direto para a API da Brevo
    */
-  private async sendEmail(toEmail: string, toName: string, subject: string, htmlContent: string): Promise<boolean> {
-    const apiKey = this.configService.get<string>('BREVO_API_KEY');
-    const senderEmail = this.configService.get<string>('BREVO_SENDER_EMAIL');
-    const senderName = this.configService.get<string>('BREVO_SENDER_NAME') || 'Sistema Coopera';
+  private async sendEmail(
+    toEmail: string,
+    toName: string,
+    subject: string,
+    htmlContent: string,
+  ): Promise<boolean> {
+    const creds = await this.resolveCredentials();
 
-    if (!apiKey || !senderEmail) {
-      this.logger.warn('BREVO_API_KEY ou BREVO_SENDER_EMAIL não estão definidos no .env!');
+    if (!creds) {
+      this.logger.warn('Credenciais Brevo não configuradas nem no .env nem no banco.');
       return false;
     }
 
@@ -24,20 +223,20 @@ export class MailService {
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
-          'accept': 'application/json',
-          'api-key': apiKey,
+          accept: 'application/json',
+          'api-key': creds.apiKey,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          sender: { name: senderName, email: senderEmail },
+          sender: { name: creds.senderName, email: creds.senderEmail },
           to: [{ email: toEmail, name: toName }],
-          subject: subject,
-          htmlContent: htmlContent,
+          subject,
+          htmlContent,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         this.logger.error(`Erro ao disparar e-mail via Brevo: ${JSON.stringify(errorData)}`);
         return false;
       }
@@ -48,6 +247,39 @@ export class MailService {
       this.logger.error(`Erro de conexão com a Brevo: ${error.message}`);
       return false;
     }
+  }
+
+  async sendDiagnosticTestEmail(toEmail: string, userName = 'Administrador Coopera') {
+    const safeName = this.escapeHtml(userName);
+    const html = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <body style="margin:0;padding:28px;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1E293B;">
+      <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E2E8F0;">
+        <div style="background:linear-gradient(135deg,#285A71 0%,#1A3C4D 100%);padding:28px 24px;text-align:center;">
+          <h1 style="color:#FFFFFF;margin:0;font-size:22px;">Sistema Coopera</h1>
+          <p style="color:#CBD5E1;margin:6px 0 0;font-size:13px;">Confirmação de Servidor de E-mail Ativo</p>
+        </div>
+        <div style="padding:28px 24px;">
+          <h2 style="margin:0 0 10px;font-size:18px;color:#0F172A;">Olá, ${safeName}! ✅</h2>
+          <p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">
+            O envio transacional de e-mails da plataforma <strong>Coopera</strong> na nuvem (Vercel + Brevo) está configurado e operacional para convites de colaboradores e recuperação de senha.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>`;
+    const sent = await this.sendEmail(
+      toEmail,
+      userName,
+      'Servidor de E-mail Ativo - Sistema Coopera',
+      html,
+    );
+    return {
+      status: sent ? 'success' : 'error',
+      emailSent: sent,
+      recipient: toEmail,
+    };
   }
 
   private escapeHtml(str: string): string {
@@ -65,7 +297,7 @@ export class MailService {
   async sendFirstAccessEmail(toEmail: string, userName: string, activationCode: string, rawToken: string) {
     const safeName = this.escapeHtml(userName);
     const subject = 'Convite de Acesso à Plataforma - Sistema Coopera';
-    
+
     const html = `
     <!DOCTYPE html>
     <html lang="pt-BR">
