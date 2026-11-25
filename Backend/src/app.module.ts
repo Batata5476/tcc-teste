@@ -21,22 +21,20 @@ import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
-    // Load environment variables from .env and make ConfigService available globally
     ConfigModule.forRoot({
       isGlobal: true,
     }),
 
-    // Global rate limit: 240 requests per minute per IP address (auth routes enforce stricter @Throttle)
     ThrottlerModule.forRoot({
       throttlers: [
         {
-          ttl: 60000, // 1 minute
-          limit: 240, // Maximum of 240 requests in this period
+          ttl: 60000,
+          limit: 240,
         },
       ],
     }),
 
-    // Database configuration (supports local DB_* or cloud DATABASE_URL + DB_SSL)
+    // Configuração otimizada para PostgreSQL local ou Supabase + Vercel Serverless
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -44,12 +42,20 @@ import { BackupModule } from './backup/backup.module';
         const databaseUrl = configService.get<string>('DATABASE_URL');
         const dbSslEnv = configService.get<string>('DB_SSL');
         const useSsl = dbSslEnv !== undefined ? dbSslEnv === 'true' : Boolean(databaseUrl);
+        const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+        const extraPool = {
+          max: isServerless ? 3 : 10,
+          connectionTimeoutMillis: 10000,
+          idleTimeoutMillis: 30000,
+          keepAlive: true,
+        };
 
         if (databaseUrl) {
           return {
             type: 'postgres' as const,
             url: databaseUrl,
             ssl: useSsl ? { rejectUnauthorized: false } : false,
+            extra: extraPool,
             autoLoadEntities: true,
             synchronize: false,
           };
@@ -63,13 +69,13 @@ import { BackupModule } from './backup/backup.module';
           password: configService.get<string>('DB_PASSWORD'),
           database: configService.get<string>('DB_DATABASE'),
           ssl: useSsl ? { rejectUnauthorized: false } : false,
+          extra: extraPool,
           autoLoadEntities: true,
           synchronize: false,
         };
       },
     }),
 
-    // Application modules
     AuthModule,
     UsersModule,
     CompanyModule,
@@ -86,7 +92,6 @@ import { BackupModule } from './backup/backup.module';
     BackupModule,
   ],
 
-  // Apply the ThrottlerGuard globally to all routes
   providers: [
     {
       provide: APP_GUARD,

@@ -19,10 +19,16 @@ export class BackupService {
     private readonly backupDir: string;
 
     constructor(private readonly configService: ConfigService) {
-        // Pasta onde os backups ficarão salvos: BD/backups
-        this.backupDir = path.resolve(process.cwd(), '..', 'BD', 'backups');
-        if (!fs.existsSync(this.backupDir)) {
-            fs.mkdirSync(this.backupDir, { recursive: true });
+        const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+        this.backupDir = isServerless
+            ? path.join('/tmp', 'backups')
+            : path.resolve(process.cwd(), '..', 'BD', 'backups');
+        try {
+            if (!fs.existsSync(this.backupDir)) {
+                fs.mkdirSync(this.backupDir, { recursive: true });
+            }
+        } catch (err: any) {
+            this.logger.warn(`Diretório de backups não pôde ser criado: ${err?.message}`);
         }
     }
 

@@ -13,6 +13,7 @@ import {
   Alert,
   Modal,
   Image,
+  Linking,
   ActivityIndicator,
   useWindowDimensions,
   StatusBar,
@@ -41,6 +42,7 @@ type ChatMessage = {
   text: string;
   sender: "me" | "them";
   time: string;
+  sentAt?: string | null;
 };
 
 type ChatListItem = {
@@ -51,10 +53,74 @@ type ChatListItem = {
   online: boolean;
   lastMessage: string;
   time: string;
+  lastSentAt?: string | null;
   unreadCount: number;
   role: string;
   messages: ChatMessage[];
 };
+
+// Converte ISO (UTC do servidor) para o fuso horário real do aparelho de quem envia/recebe
+function formatMessageTimeLocal(sentAt?: string | null, fallbackTime?: string): string {
+  if (sentAt) {
+    const parsed = new Date(sentAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    }
+  }
+  return fallbackTime || "";
+}
+
+// Reduz fotos grandes de celulares (iPhone/Android Web) para ~150-350KB antes do envio na Vercel
+async function compressWebImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Falha ao ler imagem"));
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (typeof document === "undefined" || typeof window === "undefined") {
+        resolve(dataUrl);
+        return;
+      }
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const MAX_DIM = 1280;
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width >= height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.78);
+          resolve(compressed.length < dataUrl.length ? compressed : dataUrl);
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function getAvatarSource(foto?: string | null) {
   if (!foto) return null;
@@ -276,8 +342,14 @@ export default function ChatScreen() {
         const body = await res.json();
         const loadedChats: ChatListItem[] = (body.data ?? []).map((c: any) => ({
           ...c,
+          time: formatMessageTimeLocal(c.lastSentAt, c.time),
           messages: Array.isArray(c.messages)
-            ? c.messages.filter((m: any) => !hiddenMessageIdsRef.current.has(String(m.id)))
+            ? c.messages
+                .filter((m: any) => !hiddenMessageIdsRef.current.has(String(m.id)))
+                .map((m: any) => ({
+                  ...m,
+                  time: formatMessageTimeLocal(m.sentAt, m.time),
+                }))
             : [],
         }));
         setChats(loadedChats);
@@ -319,45 +391,62 @@ export default function ChatScreen() {
     });
   }, []);
 
-  // Polling em tempo real (a cada 3.5 segundos) para sincronizar mensagens e novas conversas
+  // Polling paralelo sem sobreposição de requisições (evita gargalo em 4G / serverless)
   useEffect(() => {
+    let isPolling = false;
+
     const timer = setInterval(async () => {
-      const active = selectedChatRef.current;
-      if (active?.id) {
-        try {
-          const res = await authenticatedFetch(`/chat/${active.id}/messages`);
-          if (res.ok) {
-            const body = await res.json();
-            const rawMessages: ChatMessage[] = body.data ?? [];
-            const freshMessages = rawMessages.filter(
-              (m) => !hiddenMessageIdsRef.current.has(String(m.id))
-            );
-            setSelectedChat((prev) => {
-              if (!prev || prev.id !== active.id) return prev;
-              const prevMsgs = prev.messages || [];
-              const hasDiff =
-                freshMessages.length !== prevMsgs.length ||
-                (freshMessages.length > 0 &&
-                  prevMsgs.length > 0 &&
-                  freshMessages[freshMessages.length - 1].id !==
-                  prevMsgs[prevMsgs.length - 1].id);
-              if (hasDiff) {
-                return { ...prev, messages: freshMessages };
-              }
-              return prev;
-            });
-          }
-        } catch (e) {
-          // Erro silencioso no polling
-        }
+      if (isPolling) return;
+      if (
+        Platform.OS === "web" &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden"
+      ) {
+        return;
       }
 
-      // Atualiza lista de conversas silenciosamente e calcula contador não lidas
+      isPolling = true;
       try {
-        const convRes = await authenticatedFetch("/chat/conversations");
-        if (convRes.ok) {
+        const active = selectedChatRef.current;
+
+        const [msgRes, convRes] = await Promise.all([
+          active?.id
+            ? authenticatedFetch(`/chat/${active.id}/messages`).catch(() => null)
+            : Promise.resolve(null),
+          authenticatedFetch("/chat/conversations").catch(() => null),
+        ]);
+
+        if (active?.id && msgRes && msgRes.ok) {
+          const body = await msgRes.json();
+          const rawMessages: ChatMessage[] = (body.data ?? []).map((m: any) => ({
+            ...m,
+            time: formatMessageTimeLocal(m.sentAt, m.time),
+          }));
+          const freshMessages = rawMessages.filter(
+            (m) => !hiddenMessageIdsRef.current.has(String(m.id))
+          );
+          setSelectedChat((prev) => {
+            if (!prev || prev.id !== active.id) return prev;
+            const prevMsgs = prev.messages || [];
+            const hasDiff =
+              freshMessages.length !== prevMsgs.length ||
+              freshMessages.some(
+                (fm, idx) =>
+                  fm.id !== prevMsgs[idx]?.id || fm.text !== prevMsgs[idx]?.text
+              );
+            if (hasDiff) {
+              return { ...prev, messages: freshMessages };
+            }
+            return prev;
+          });
+        }
+
+        if (convRes && convRes.ok) {
           const body = await convRes.json();
-          const loaded: ChatListItem[] = body.data ?? [];
+          const loaded: ChatListItem[] = (body.data ?? []).map((c: any) => ({
+            ...c,
+            time: formatMessageTimeLocal(c.lastSentAt, c.time),
+          }));
           setChats((prevList) => {
             return loaded.map((fresh) => {
               const prev = prevList.find((c) => c.id === fresh.id);
@@ -382,7 +471,6 @@ export default function ChatScreen() {
             });
           });
 
-          // Sincroniza foto e status do chat aberto se mudarem no perfil
           if (active?.id) {
             const activeFresh = loaded.find((c) => c.id === active.id);
             if (
@@ -402,8 +490,8 @@ export default function ChatScreen() {
             }
           }
         }
-      } catch (e) {
-        // Erro silencioso no polling
+      } finally {
+        isPolling = false;
       }
     }, 3500);
 
@@ -462,7 +550,10 @@ export default function ChatScreen() {
       const res = await authenticatedFetch(`/chat/${chat.id}/messages`);
       if (res.ok) {
         const body = await res.json();
-        const loadedMessages: ChatMessage[] = body.data ?? [];
+        const loadedMessages: ChatMessage[] = (body.data ?? []).map((m: any) => ({
+          ...m,
+          time: formatMessageTimeLocal(m.sentAt, m.time),
+        }));
         const visibleMessages = loadedMessages.filter(
           (m) => !hiddenMessageIdsRef.current.has(String(m.id))
         );
@@ -624,30 +715,56 @@ export default function ChatScreen() {
         if (typeof document !== "undefined") {
           const input = document.createElement("input");
           input.type = "file";
-          input.accept = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt";
-          input.onchange = (e: any) => {
-            const file = e.target?.files?.[0];
-            if (file) {
-              const isImg =
-                file.type?.startsWith("image/") ||
-                /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
-              const cleanName =
-                file.name || (isImg ? "imagem.png" : "documento.pdf");
+          input.accept = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv";
+          input.onchange = async (e: any) => {
+            const file: File | undefined = e.target?.files?.[0];
+            if (!file) return;
 
-              const reader = new FileReader();
-              reader.onload = (event) => {
-                const b64 = event.target?.result as string;
+            const isImg =
+              file.type?.startsWith("image/") ||
+              /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
+            const cleanName = isImg
+              ? (file.name ? file.name.replace(/\.[^.]+$/, ".jpg") : "imagem.jpg")
+              : (file.name || "documento.pdf");
+
+            if (!isImg && file.size > 3.2 * 1024 * 1024) {
+              Alert.alert(
+                "Arquivo muito grande",
+                "Envie documentos de até 3 MB para garantir envio rápido."
+              );
+              return;
+            }
+
+            try {
+              if (isImg && !/\.gif$/i.test(file.name)) {
+                const compressedB64 = await compressWebImageFile(file);
                 setAttachedFile({
                   name: cleanName,
-                  type: isImg ? "image" : "file",
+                  type: "image",
                   uri:
                     typeof URL !== "undefined"
                       ? URL.createObjectURL(file)
-                      : undefined,
-                  base64: b64,
+                      : compressedB64,
+                  base64: compressedB64,
                 });
-              };
-              reader.readAsDataURL(file);
+              } else {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  const b64 = event.target?.result as string;
+                  setAttachedFile({
+                    name: cleanName,
+                    type: isImg ? "image" : "file",
+                    uri:
+                      typeof URL !== "undefined"
+                        ? URL.createObjectURL(file)
+                        : undefined,
+                    base64: b64,
+                  });
+                };
+                reader.readAsDataURL(file);
+              }
+            } catch {
+              Alert.alert("Erro", "Não foi possível processar o arquivo selecionado.");
             }
           };
           input.click();
@@ -666,7 +783,7 @@ export default function ChatScreen() {
         const result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
           allowsEditing: false,
-          quality: 0.7,
+          quality: 0.6,
           base64: true,
         });
 
@@ -700,7 +817,7 @@ export default function ChatScreen() {
       const isImg = attachedFile.type === "image";
       let fileReference = attachedFile.name;
 
-      // Se tivermos o base64 (imagem selecionada), fazemos upload para o servidor
+      // Se tivermos o base64 (imagem ou documento), fazemos upload para o servidor
       if (attachedFile.base64) {
         try {
           setIsUploading(true);
@@ -711,22 +828,35 @@ export default function ChatScreen() {
               base64: attachedFile.base64,
             }),
           });
-          if (uploadRes.ok) {
-            const uploadBody = await uploadRes.json();
-            if (uploadBody.data?.url) {
-              fileReference = uploadBody.data.url;
-            }
+          if (!uploadRes.ok) {
+            const errBody = await uploadRes.json().catch(() => ({}));
+            const errMsg = Array.isArray(errBody.message)
+              ? errBody.message.join("\n")
+              : errBody.message || `Falha ao enviar anexo (HTTP ${uploadRes.status}).`;
+            Alert.alert("Não foi possível enviar o anexo", errMsg);
+            return;
+          }
+          const uploadBody = await uploadRes.json();
+          if (uploadBody.data?.url) {
+            fileReference = uploadBody.data.url;
           }
         } catch (uploadErr) {
-          console.warn("Falha no upload da foto", uploadErr);
+          console.warn("Falha no upload do anexo", uploadErr);
+          Alert.alert(
+            "Erro no envio",
+            "Não foi possível enviar a foto ou arquivo. Verifique sua conexão ou tente um arquivo menor."
+          );
+          return;
         } finally {
           setIsUploading(false);
         }
       }
 
-      // Encurta nomes muito longos se for apenas nome de arquivo (preserva URL /uploads/...)
+      // Encurta nomes muito longos se for apenas nome de arquivo (preserva URL /uploads/... ou https://...)
       const safeFileRef =
-        fileReference.length > 60 && !fileReference.startsWith("/uploads/")
+        fileReference.length > 60 &&
+        !fileReference.startsWith("/uploads/") &&
+        !fileReference.startsWith("http")
           ? fileReference.slice(0, 57) + "..."
           : fileReference;
 
@@ -1453,10 +1583,34 @@ export default function ChatScreen() {
         );
       }
 
-        // Se for arquivo ou documento (PDF, doc, etc.)
+        // Se for arquivo ou documento (PDF, doc, etc.) — permite tocar para abrir/baixar
+        const isDownloadableFile =
+          fileRef.startsWith("/uploads/") ||
+          fileRef.startsWith("http://") ||
+          fileRef.startsWith("https://");
+        const fullAttachmentUrl = fileRef.startsWith("http")
+          ? fileRef
+          : `${API_URL}${fileRef.startsWith("/") ? fileRef : `/${fileRef}`}`;
+
+        const handleOpenAttachment = () => {
+          if (!isDownloadableFile) {
+            Alert.alert("Anexo indisponível", "Este arquivo não possui link disponível no servidor.");
+            return;
+          }
+          if (Platform.OS === "web" && typeof window !== "undefined") {
+            window.open(fullAttachmentUrl, "_blank", "noopener,noreferrer");
+          } else {
+            Linking.openURL(fullAttachmentUrl).catch(() =>
+              Alert.alert("Erro", "Não foi possível abrir o anexo.")
+            );
+          }
+        };
+
         return (
         <View style={styles.attachmentContentWrapper}>
-          <View
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handleOpenAttachment}
             style={[
               styles.attachmentCard,
               isMe ? styles.attachmentCardRight : styles.attachmentCardLeft,
@@ -1492,7 +1646,7 @@ export default function ChatScreen() {
                     : styles.attachmentSubtitleLeft,
                 ]}
               >
-                {isImage ? "Imagem" : "Documento"}
+                {isImage ? "Imagem" : "Toque para abrir"}
               </Text>
             </View>
             <Ionicons
@@ -1501,7 +1655,7 @@ export default function ChatScreen() {
               color={isMe ? "#FFFFFF" : "#285A71"}
               style={{ marginLeft: 6, opacity: 0.85 }}
             />
-          </View>
+          </TouchableOpacity>
           {comment && (
             <Text
               style={[

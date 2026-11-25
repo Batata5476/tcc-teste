@@ -32,9 +32,13 @@ export default function FeedbackModal({
   buttonText = "Entendido",
   onClose,
 }: FeedbackModalProps) {
-  const handleCopyDetails = () => {
+  const handleCopyDetails = async () => {
     if (details) {
-      Clipboard.setString(details);
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(details).catch(() => Clipboard.setString(details));
+      } else {
+        Clipboard.setString(details);
+      }
       Alert.alert("Copiado!", "Credenciais copiadas para a área de transferência.");
     }
   };

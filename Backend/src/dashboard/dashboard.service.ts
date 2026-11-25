@@ -20,20 +20,20 @@ export class DashboardService {
   ) {}
 
   async getUserDashboard(userId: number) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['setor', 'role'],
-    });
+    const [user, associations] = await Promise.all([
+      this.userRepository.findOne({
+        where: { id: userId },
+        relations: ['setor', 'role'],
+      }),
+      this.funcTarefaRepository.find({
+        where: { fk_id_func: userId },
+        relations: ['tarefa'],
+      }),
+    ]);
 
     if (!user) {
       throw new NotFoundException(`Funcionário com ID ${userId} não encontrado`);
     }
-
-    // Conta tarefas associadas a este funcionário que estão pendentes (status = 3 ou 2)
-    const associations = await this.funcTarefaRepository.find({
-      where: { fk_id_func: userId },
-      relations: ['tarefa'],
-    });
 
     const pendingTasksCount = associations.filter(
       (assoc) =>
@@ -65,21 +65,27 @@ export class DashboardService {
   }
 
   async getCompanyDashboard(companyId: number) {
-    const companyUsers = await this.userRepository.find({
-      where: { empresa_id: companyId },
-      select: ['id'],
-    });
+    const [totalFuncionarios, companyTaskAssocs, humorStatsRaw, ultimoHumor] = await Promise.all([
+      this.userRepository.count({ where: { empresa_id: companyId } }),
+      this.funcTarefaRepository.find({
+        where: { fk_cod_empresa: companyId },
+        relations: ['tarefa'],
+      }),
+      this.humorRepository
+        .createQueryBuilder('humor')
+        .innerJoin(User, 'user', 'humor.fk_id_func = user.id')
+        .select('AVG(humor.humor_func)', 'media')
+        .addSelect('COUNT(*)', 'total')
+        .where('user.empresa_id = :companyId', { companyId })
+        .getRawOne(),
+      this.humorRepository
+        .createQueryBuilder('humor')
+        .innerJoin(User, 'user', 'humor.fk_id_func = user.id')
+        .where('user.empresa_id = :companyId', { companyId })
+        .orderBy('humor.dth_humor', 'DESC')
+        .getOne(),
+    ]);
 
-    const totalFuncionarios = companyUsers.length;
-    const userIds = companyUsers.map((u) => u.id);
-
-    // Contar tarefas ligadas à empresa através de FuncTarefa
-    const companyTaskAssocs = await this.funcTarefaRepository.find({
-      where: { fk_cod_empresa: companyId },
-      relations: ['tarefa'],
-    });
-
-    // Remover duplicatas de tarefas
     const uniqueTasksMap = new Map<number, Task>();
     companyTaskAssocs.forEach((assoc) => {
       if (assoc.tarefa) {
@@ -96,31 +102,8 @@ export class DashboardService {
       (t) => t.status_tarefa === 1,
     ).length;
 
-    // Humor filtrado pelos usuários da empresa
-    let humorMedio = '0.0';
-    let totalHumores = 0;
-    let ultimoHumor: Humor | null = null;
-
-    if (userIds.length > 0) {
-      const humorMedioRaw = await this.humorRepository
-        .createQueryBuilder('humor')
-        .select('AVG(humor.humor_func)', 'media')
-        .where('humor.fk_id_func IN (:...userIds)', { userIds })
-        .getRawOne();
-
-      humorMedio = Number(humorMedioRaw?.media || 0).toFixed(1);
-
-      totalHumores = await this.humorRepository
-        .createQueryBuilder('humor')
-        .where('humor.fk_id_func IN (:...userIds)', { userIds })
-        .getCount();
-
-      ultimoHumor = await this.humorRepository
-        .createQueryBuilder('humor')
-        .where('humor.fk_id_func IN (:...userIds)', { userIds })
-        .orderBy('humor.dth_humor', 'DESC')
-        .getOne();
-    }
+    const humorMedio = Number(humorStatsRaw?.media || 0).toFixed(1);
+    const totalHumores = Number(humorStatsRaw?.total || 0);
 
     return {
       status: 'success',

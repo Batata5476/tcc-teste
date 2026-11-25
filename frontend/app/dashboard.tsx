@@ -204,9 +204,16 @@ export default function Dashboard() {
       if (sessionType === "company") {
         setUserType("company");
 
-        const companyRes = await authenticatedFetch("/dashboard/company");
+        const [companyRes, userRes, empRes, companyTasksRes, meetingsRes] =
+          await Promise.all([
+            authenticatedFetch("/dashboard/company"),
+            authenticatedFetch("/dashboard/user"),
+            authenticatedFetch("/users"),
+            authenticatedFetch("/tasks/company-tasks"),
+            authenticatedFetch("/meetings"),
+          ]);
 
-        if (companyRes.status === 401) {
+        if (companyRes.status === 401 || userRes.status === 401) {
           router.replace("/");
           return;
         }
@@ -216,78 +223,76 @@ export default function Dashboard() {
           setCompanyData(body.data ?? body);
         }
 
-        const userRes = await authenticatedFetch("/dashboard/user");
-
         if (userRes.ok) {
           const body = await userRes.json();
           setUserData(body.data);
           setUserPhoto(body.data?.foto || null);
         }
-
-        const empRes = await authenticatedFetch("/users");
 
         if (empRes.ok) {
           const empBody = await empRes.json();
           setEmployees(empBody.data ?? []);
         }
 
-        const companyTasksRes = await authenticatedFetch(
-          "/tasks/company-tasks"
-        );
-
         if (companyTasksRes.ok) {
           const companyTasksBody = await companyTasksRes.json();
           setTasks(companyTasksBody.data ?? []);
         } else {
           const myTasksRes = await authenticatedFetch("/tasks/my-tasks");
-
           if (myTasksRes.ok) {
             const myTasksBody = await myTasksRes.json();
             setTasks(myTasksBody.data ?? []);
           }
         }
+
+        if (meetingsRes.ok) {
+          const meetingsBody = await meetingsRes.json();
+          setMeetings(meetingsBody.data ?? []);
+        }
       } else {
         setUserType("user");
 
-        const userRes = await authenticatedFetch("/dashboard/user");
+        const [userRes, tasksRes, meetingsRes] = await Promise.all([
+          authenticatedFetch("/dashboard/user"),
+          authenticatedFetch("/tasks/my-tasks"),
+          authenticatedFetch("/meetings"),
+        ]);
 
         if (userRes.status === 401) {
           router.replace("/");
           return;
         }
 
-        if (userRes.ok) {
-          const body = await userRes.json();
-          setUserData(body.data);
-          setUserPhoto(body.data?.foto || null);
-
-          // Se for administrador, carrega também os funcionários para gestão
-          if (body.data?.role === "Administrador" || body.data?.role === "Administrador Master") {
-            const empRes = await authenticatedFetch("/users");
-            if (empRes.ok) {
-              const empBody = await empRes.json();
-              setEmployees(empBody.data ?? []);
-            }
-          }
-        } else {
+        if (!userRes.ok) {
           router.replace("/");
           return;
         }
 
-        const tasksRes = await authenticatedFetch("/tasks/my-tasks");
+        const body = await userRes.json();
+        setUserData(body.data);
+        setUserPhoto(body.data?.foto || null);
 
         if (tasksRes.ok) {
           const tasksBody = await tasksRes.json();
           setTasks(tasksBody.data ?? []);
         }
-      }
 
-      // Busca reuniões da empresa ou usuário
-      const meetingsRes = await authenticatedFetch("/meetings");
+        if (meetingsRes.ok) {
+          const meetingsBody = await meetingsRes.json();
+          setMeetings(meetingsBody.data ?? []);
+        }
 
-      if (meetingsRes.ok) {
-        const meetingsBody = await meetingsRes.json();
-        setMeetings(meetingsBody.data ?? []);
+        // Se for administrador, carrega também os funcionários para gestão
+        if (
+          body.data?.role === "Administrador" ||
+          body.data?.role === "Administrador Master"
+        ) {
+          const empRes = await authenticatedFetch("/users");
+          if (empRes.ok) {
+            const empBody = await empRes.json();
+            setEmployees(empBody.data ?? []);
+          }
+        }
       }
     } catch (e) {
       console.error(e);

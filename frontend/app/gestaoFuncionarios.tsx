@@ -163,12 +163,10 @@ export default function GestaoFuncionariosScreen() {
   // Alterna status do funcionário (Ativo / Inativo) com suporte 100% funcional na Web e Mobile
   const handleToggleStatus = (employee: Employee) => {
     if (isProtectedAdminAccount(employee)) {
-      const msg = "A conta principal ou sua própria sessão ativa não pode ser desativada.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Conta Protegida", msg);
-      }
+      Alert.alert(
+        "Conta Protegida",
+        "A conta principal ou sua própria sessão ativa não pode ser desativada."
+      );
       return;
     }
     const isCurrentlyActive = employee.status === "ACTIVE";
@@ -190,50 +188,31 @@ export default function GestaoFuncionariosScreen() {
           if (selectedEmployee?.id === employee.id) {
             setSelectedEmployee((prev) => (prev ? { ...prev, status: newStatus } : null));
           }
-          const successMsg = `Colaborador ${isCurrentlyActive ? "desativado" : "ativado"} com sucesso!`;
-          if (Platform.OS === "web") {
-            window.alert(successMsg);
-          } else {
-            Alert.alert("Sucesso", successMsg);
-          }
+          Alert.alert(
+            "Sucesso",
+            `Colaborador ${isCurrentlyActive ? "desativado" : "ativado"} com sucesso!`
+          );
         } else {
           const err = await res.json().catch(() => ({}));
-          const errorMsg = err.message || "Não foi possível alterar o status.";
-          if (Platform.OS === "web") {
-            window.alert(`Erro: ${errorMsg}`);
-          } else {
-            Alert.alert("Erro", errorMsg);
-          }
+          Alert.alert("Erro", err.message || "Não foi possível alterar o status.");
         }
       } catch (e) {
-        const errorMsg = "Erro ao conectar com o servidor.";
-        if (Platform.OS === "web") {
-          window.alert(`Erro: ${errorMsg}`);
-        } else {
-          Alert.alert("Erro", errorMsg);
-        }
+        Alert.alert("Erro", "Erro ao conectar com o servidor.");
       }
     };
 
-    if (Platform.OS === "web") {
-      const confirmed = window.confirm(`Tem certeza que deseja ${actionText.toLowerCase()} o acesso de ${employee.nome}?`);
-      if (confirmed) {
-        executeToggle();
-      }
-    } else {
-      Alert.alert(
-        `${actionText} Colaborador`,
-        `Tem certeza que deseja ${actionText.toLowerCase()} o acesso de ${employee.nome}?`,
-        [
-          { text: "Cancelar", style: "cancel" },
-          {
-            text: actionText,
-            style: isCurrentlyActive ? "destructive" : "default",
-            onPress: executeToggle,
-          },
-        ]
-      );
-    }
+    Alert.alert(
+      `${actionText} Colaborador`,
+      `Tem certeza que deseja ${actionText.toLowerCase()} o acesso de ${employee.nome}?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: actionText,
+          style: isCurrentlyActive ? "destructive" : "default",
+          onPress: executeToggle,
+        },
+      ]
+    );
   };
 
   // Abre modal de detalhes

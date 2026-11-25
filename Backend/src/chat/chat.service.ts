@@ -1,15 +1,47 @@
-import { ForbiddenException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UploadMediaDto } from './dto/upload-media.dto';
+import {
+  getSupabaseStorageConfig,
+  isServerlessRuntime,
+  saveChatFileToDatabase,
+  uploadChatFileToSupabase,
+} from './chat-storage';
 import { Message } from './entities/message.entity';
 import { Chat } from './entities/chat.entity';
 import { ChatParticipant } from './entities/chat-participant.entity';
 import { User } from '../users/entities/user.entity';
+
+// Horário padrão em Brasília caso o cliente não formate sentAt localmente
+const timeFormatterBR = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/Sao_Paulo',
+});
+
+function formatTimeBR(value: Date | string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return timeFormatterBR.format(date);
+}
+
+function toIsoSafe(value: Date | string | undefined | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 @Injectable()
 export class ChatService {
@@ -25,9 +57,12 @@ export class ChatService {
   ) {}
 
   private async validateChatAccess(chatId: number, caller: any): Promise<Chat> {
-    const chat = await this.chatRepository.findOne({
-      where: { pk_id_chat: chatId },
-    });
+    const [chat, participant] = await Promise.all([
+      this.chatRepository.findOne({ where: { pk_id_chat: chatId } }),
+      this.chatParticipantRepository.findOne({
+        where: { fk_id_chat: chatId, fk_id_func: caller.sub },
+      }),
+    ]);
 
     if (!chat) {
       throw new NotFoundException(`Chat com ID ${chatId} não encontrado`);
@@ -36,13 +71,6 @@ export class ChatService {
     if (chat.fk_cod_empresa !== caller.empresa_id) {
       throw new ForbiddenException('Este chat não pertence à sua empresa');
     }
-
-    const participant = await this.chatParticipantRepository.findOne({
-      where: {
-        fk_id_chat: chatId,
-        fk_id_func: caller.sub,
-      },
-    });
 
     if (!participant) {
       throw new ForbiddenException('Você não é participante deste chat');
@@ -84,7 +112,7 @@ export class ChatService {
     };
   }
 
-  // ─── Listar Conversas Ativas do Usuário ────────────────────────────────────
+  // ─── Listar Conversas Ativas do Usuário (em lote, sem N+1 queries) ──────────
   async getConversations(caller: any) {
     const callerId = caller.sub;
 
@@ -93,95 +121,107 @@ export class ChatService {
       relations: ['chat'],
     });
 
-    const conversations = await Promise.all(
-      myParticipations.map(async (p) => {
-        const chatId = p.fk_id_chat;
+    if (myParticipations.length === 0) {
+      return { status: 'success', data: [] };
+    }
 
-        // Busca o outro participante da conversa
-        const otherParticipant = await this.chatParticipantRepository.findOne({
-          where: { fk_id_chat: chatId },
-          relations: ['funcionario', 'funcionario.setor', 'funcionario.role'],
-        });
+    const chatIds = Array.from(new Set(myParticipations.map((p) => p.fk_id_chat)));
 
-        // Busca todas as participações para encontrar o outro participante diferente de mim
-        const allParticipants = await this.chatParticipantRepository.find({
-          where: { fk_id_chat: chatId },
-          relations: ['funcionario', 'funcionario.setor', 'funcionario.role'],
-        });
-
-        const other = allParticipants.find((item) => item.fk_id_func !== callerId)?.funcionario
-          || otherParticipant?.funcionario;
-
-        // Busca a última mensagem enviada no chat
-        const lastMsg = await this.messageRepository.findOne({
-          where: { fk_id_chat: chatId },
-          order: { data_envio: 'DESC' },
-        });
-
-        const name = other ? other.nome : `Conversa #${chatId}`;
-        const initials = name
-          .split(' ')
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join('')
-          .toUpperCase();
-
-        let formattedTime = '';
-        if (lastMsg?.data_envio) {
-          const d = new Date(lastMsg.data_envio);
-          const hours = String(d.getHours()).padStart(2, '0');
-          const minutes = String(d.getMinutes()).padStart(2, '0');
-          formattedTime = `${hours}:${minutes}`;
-        }
-
-        const photo = other ? (other.foto_func || other.foto || null) : null;
-
-        const rawLastMsg = lastMsg ? lastMsg.conteudo_mensagens : 'Conversa iniciada';
-        let safeLastMessage = rawLastMsg;
-        if (safeLastMessage && safeLastMessage !== 'Conversa iniciada') {
-          if (
-            safeLastMessage === '🚫 Esta mensagem foi apagada' ||
-            safeLastMessage === '🚫 Você apagou esta mensagem'
-          ) {
-            safeLastMessage = '🚫 Mensagem apagada';
-          } else if (safeLastMessage.startsWith('📷 [Foto]') || safeLastMessage.startsWith('📷 Foto')) {
-            const parts = safeLastMessage.split(' - ');
-            const comment = parts.length > 1 ? parts.slice(1).join(' - ').trim() : null;
-            safeLastMessage = comment ? `📷 ${comment}` : '📷 Foto';
-          } else if (safeLastMessage.startsWith('📎 [Arquivo]') || safeLastMessage.startsWith('📎 Arquivo')) {
-            const parts = safeLastMessage.split(' - ');
-            const headerPart = parts[0];
-            const comment = parts.length > 1 ? parts.slice(1).join(' - ').trim() : null;
-            const fileRef = headerPart
-              .replace('📎 [Arquivo]', '')
-              .replace('📎 Arquivo', '')
-              .trim();
-            const fileName =
-              fileRef && !fileRef.startsWith('/uploads/') && !fileRef.startsWith('http')
-                ? fileRef.split('/').pop() || 'Documento'
-                : 'Documento';
-            safeLastMessage = comment ? `📎 ${fileName} • ${comment}` : `📎 ${fileName}`;
-          } else if (safeLastMessage.includes('/uploads/chat/')) {
-            safeLastMessage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(safeLastMessage)
-              ? '📷 Foto'
-              : '📎 Arquivo';
-          }
-        }
-
-        return {
-          id: chatId,
-          name,
-          avatar: initials,
-          foto: photo,
-          online: other ? other.status === 'ACTIVE' : false,
-          lastMessage: safeLastMessage,
-          time: formattedTime,
-          unreadCount: 0,
-          role: other ? (other.cargo || other.setor?.nome || 'Colaborador') : 'Chat',
-          targetUserId: other ? other.id : null,
-        };
+    const [allParticipantsList, allRecentMessages] = await Promise.all([
+      this.chatParticipantRepository.find({
+        where: { fk_id_chat: In(chatIds) },
+        relations: ['funcionario', 'funcionario.setor', 'funcionario.role'],
       }),
-    );
+      this.messageRepository.find({
+        where: { fk_id_chat: In(chatIds) },
+        order: { data_envio: 'DESC' },
+      }),
+    ]);
+
+    const participantsByChat = new Map<number, ChatParticipant[]>();
+    for (const part of allParticipantsList) {
+      const list = participantsByChat.get(part.fk_id_chat) || [];
+      list.push(part);
+      participantsByChat.set(part.fk_id_chat, list);
+    }
+
+    const lastMsgByChat = new Map<number, Message>();
+    for (const msg of allRecentMessages) {
+      if (!lastMsgByChat.has(msg.fk_id_chat)) {
+        lastMsgByChat.set(msg.fk_id_chat, msg);
+      }
+    }
+
+    const conversations = myParticipations.map((p) => {
+      const chatId = p.fk_id_chat;
+      const allParticipants = participantsByChat.get(chatId) || [];
+      const lastMsg = lastMsgByChat.get(chatId);
+
+      const other =
+        allParticipants.find((item) => item.fk_id_func !== callerId)?.funcionario ||
+        allParticipants[0]?.funcionario;
+
+      const name = other ? other.nome : `Conversa #${chatId}`;
+      const initials = name
+        .split(' ')
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase();
+
+      const formattedTime = lastMsg?.data_envio ? formatTimeBR(lastMsg.data_envio) : '';
+      const lastSentAt = toIsoSafe(lastMsg?.data_envio);
+      const photo = other ? other.foto_func || other.foto || null : null;
+
+      const rawLastMsg = lastMsg ? lastMsg.conteudo_mensagens : 'Conversa iniciada';
+      let safeLastMessage = rawLastMsg;
+      if (safeLastMessage && safeLastMessage !== 'Conversa iniciada') {
+        if (
+          safeLastMessage === '🚫 Esta mensagem foi apagada' ||
+          safeLastMessage === '🚫 Você apagou esta mensagem'
+        ) {
+          safeLastMessage = '🚫 Mensagem apagada';
+        } else if (safeLastMessage.startsWith('📷 [Foto]') || safeLastMessage.startsWith('📷 Foto')) {
+          const parts = safeLastMessage.split(' - ');
+          const comment = parts.length > 1 ? parts.slice(1).join(' - ').trim() : null;
+          safeLastMessage = comment ? `📷 ${comment}` : '📷 Foto';
+        } else if (
+          safeLastMessage.startsWith('📎 [Arquivo]') ||
+          safeLastMessage.startsWith('📎 Arquivo')
+        ) {
+          const parts = safeLastMessage.split(' - ');
+          const headerPart = parts[0];
+          const comment = parts.length > 1 ? parts.slice(1).join(' - ').trim() : null;
+          const fileRef = headerPart
+            .replace('📎 [Arquivo]', '')
+            .replace('📎 Arquivo', '')
+            .trim();
+          const fileName =
+            fileRef && !fileRef.startsWith('/uploads/') && !fileRef.startsWith('http')
+              ? fileRef.split('/').pop() || 'Documento'
+              : 'Documento';
+          safeLastMessage = comment ? `📎 ${fileName} • ${comment}` : `📎 ${fileName}`;
+        } else if (safeLastMessage.includes('/uploads/chat/')) {
+          safeLastMessage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(safeLastMessage)
+            ? '📷 Foto'
+            : '📎 Arquivo';
+        }
+      }
+
+      return {
+        id: chatId,
+        name,
+        avatar: initials,
+        foto: photo,
+        online: other ? other.status === 'ACTIVE' : false,
+        lastMessage: safeLastMessage,
+        time: formattedTime,
+        lastSentAt,
+        unreadCount: 0,
+        role: other ? other.cargo || other.setor?.nome || 'Colaborador' : 'Chat',
+        targetUserId: other ? other.id : null,
+      };
+    });
 
     return {
       status: 'success',
@@ -198,9 +238,10 @@ export class ChatService {
       throw new BadRequestException('Você não pode iniciar uma conversa consigo mesmo');
     }
 
-    const targetUser = await this.userRepository.findOne({
-      where: { id: targetUserId },
-    });
+    const [targetUser, callerChats] = await Promise.all([
+      this.userRepository.findOne({ where: { id: targetUserId } }),
+      this.chatParticipantRepository.find({ where: { fk_id_func: callerId } }),
+    ]);
 
     if (!targetUser) {
       throw new NotFoundException('Usuário de destino não encontrado');
@@ -210,32 +251,26 @@ export class ChatService {
       throw new ForbiddenException('Usuário pertence a outra empresa');
     }
 
-    // Verifica se já existe um chat direto entre callerId e targetUserId
-    const callerChats = await this.chatParticipantRepository.find({
-      where: { fk_id_func: callerId },
-    });
-
-    for (const cp of callerChats) {
-      const otherCp = await this.chatParticipantRepository.findOne({
-        where: { fk_id_chat: cp.fk_id_chat, fk_id_func: targetUserId },
+    if (callerChats.length > 0) {
+      const chatIds = callerChats.map((cp) => cp.fk_id_chat);
+      const existingTargetPart = await this.chatParticipantRepository.findOne({
+        where: { fk_id_chat: In(chatIds), fk_id_func: targetUserId },
       });
-      if (otherCp) {
+      if (existingTargetPart) {
         return {
           status: 'success',
           message: 'Conversa existente localizada',
-          data: { id: cp.fk_id_chat },
+          data: { id: existingTargetPart.fk_id_chat },
         };
       }
     }
 
-    // Cria o registro na tabela chats
     const newChat = this.chatRepository.create({
       tipo_chat: 'direct',
       fk_cod_empresa: caller.empresa_id,
     });
     const savedChat = await this.chatRepository.save(newChat);
 
-    // Cria as participações para os dois usuários
     const part1 = this.chatParticipantRepository.create({
       fk_id_chat: savedChat.pk_id_chat,
       fk_id_func: callerId,
@@ -264,19 +299,14 @@ export class ChatService {
       order: { data_envio: 'ASC' },
     });
 
-    const formattedMessages = messages.map((m) => {
-      const d = new Date(m.data_envio);
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-
-      return {
-        id: String(m.pk_id_mensagens),
-        text: m.conteudo_mensagens,
-        sender: m.fk_id_func === caller.sub ? 'me' : 'them',
-        senderName: m.funcionario ? m.funcionario.nome : 'Usuário',
-        time: `${hours}:${minutes}`,
-      };
-    });
+    const formattedMessages = messages.map((m) => ({
+      id: String(m.pk_id_mensagens),
+      text: m.conteudo_mensagens,
+      sender: m.fk_id_func === caller.sub ? 'me' : 'them',
+      senderName: m.funcionario ? m.funcionario.nome : 'Usuário',
+      time: formatTimeBR(m.data_envio),
+      sentAt: toIsoSafe(m.data_envio),
+    }));
 
     return {
       status: 'success',
@@ -332,8 +362,8 @@ export class ChatService {
     };
   }
 
-  // ─── Upload de Mídia / Imagem do Chat ──────────────────────────────────────
-  async uploadMedia(dto: UploadMediaDto, caller: any) {
+  // ─── Upload de Mídia / Documento do Chat ───────────────────────────────────
+  async uploadMedia(dto: UploadMediaDto, _caller: any) {
     if (!dto.base64 || !dto.filename) {
       throw new BadRequestException('Arquivo inválido ou base64 não fornecido');
     }
@@ -349,12 +379,6 @@ export class ChatService {
       throw new BadRequestException('Formato de arquivo não permitido por segurança');
     }
 
-    const uploadDir = join(process.cwd(), 'uploads', 'chat');
-    if (!existsSync(uploadDir)) {
-      mkdirSync(uploadDir, { recursive: true });
-    }
-
-    // Limpa prefixos do tipo 'data:image/...;base64,' se presentes
     const base64Data = dto.base64.replace(/^data:([A-Za-z0-9.+/-]+);base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
@@ -364,9 +388,35 @@ export class ChatService {
     }
 
     const safeName = `chat-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-    const filePath = join(uploadDir, safeName);
 
-    writeFileSync(filePath, buffer);
+    // 1. Persiste no PostgreSQL para funcionar 100% na Vercel + Supabase sem configuração extra
+    const savedInDb = await saveChatFileToDatabase(
+      this.messageRepository.manager,
+      safeName,
+      ext,
+      dto.filename,
+      buffer,
+    );
+
+    // 2. Se Supabase Storage também estiver configurado, envia cópia para o bucket
+    if (getSupabaseStorageConfig()) {
+      await uploadChatFileToSupabase(safeName, ext, buffer);
+    } else if (!savedInDb && isServerlessRuntime()) {
+      throw new ServiceUnavailableException('Não foi possível persistir o arquivo enviado.');
+    }
+
+    // 3. Em ambiente local, mantém também cópia em disco em uploads/chat
+    if (!isServerlessRuntime()) {
+      try {
+        const uploadDir = join(process.cwd(), 'uploads', 'chat');
+        if (!existsSync(uploadDir)) {
+          mkdirSync(uploadDir, { recursive: true });
+        }
+        writeFileSync(join(uploadDir, safeName), buffer);
+      } catch {
+        // Ignora caso o diretório local não permita escrita e o arquivo já esteja no banco
+      }
+    }
 
     return {
       status: 'success',

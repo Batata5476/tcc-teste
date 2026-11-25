@@ -3,17 +3,38 @@ import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Platform, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import WebAlertHost, { installWebAlert } from "../components/common/WebAlertHost";
+
+installWebAlert();
 
 export default function RootLayout() {
   const router = useRouter();
 
   useEffect(() => {
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      const styleId = "hide-floating-dev-icons";
+      // Ajusta meta viewport em tempo de execução (dev e produção) para evitar zoom involuntário no iOS
+      const viewport = document.querySelector('meta[name="viewport"]');
+      if (viewport) {
+        viewport.setAttribute(
+          "content",
+          "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+        );
+      }
+
+      const styleId = "coopera-web-mobile-fixes";
       if (!document.getElementById(styleId)) {
         const style = document.createElement("style");
         style.id = styleId;
         style.innerHTML = `
+          html, body {
+            -webkit-text-size-adjust: 100%;
+            touch-action: manipulation;
+          }
+          @media screen and (max-width: 768px) {
+            input, textarea, select {
+              font-size: 16px !important;
+            }
+          }
           [data-expo-dev-menu],
           [aria-label="Developer Menu"],
           div[class*="dev-menu"],
@@ -109,6 +130,7 @@ export default function RootLayout() {
         <Stack.Screen name="modal" options={{ presentation: "modal", headerLeft: renderBackToDashboard }} />
       </Stack>
 
+      <WebAlertHost />
       <StatusBar style="dark" />
     </>
   );

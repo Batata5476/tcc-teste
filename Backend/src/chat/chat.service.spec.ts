@@ -27,6 +27,9 @@ describe('ChatService', () => {
       find: jest.fn(),
       findOne: jest.fn(),
       remove: jest.fn(),
+      manager: {
+        query: jest.fn().mockResolvedValue([]),
+      },
     };
 
     chatRepository = {
@@ -147,6 +150,37 @@ describe('ChatService', () => {
       const res = await service.remove(42, mockCaller, false);
       expect(res.status).toBe('success');
       expect(messageRepository.remove).not.toHaveBeenCalled();
+    });
+
+    it('formats message time in America/Sao_Paulo and includes ISO sentAt', async () => {
+      chatRepository.findOne.mockResolvedValue({ pk_id_chat: 5, fk_cod_empresa: 1 });
+      chatParticipantRepository.findOne.mockResolvedValue({ fk_id_chat: 5, fk_id_func: 10 });
+      messageRepository.find.mockResolvedValue([
+        {
+          pk_id_mensagens: 7,
+          conteudo_mensagens: 'Teste fuso',
+          data_envio: new Date('2026-11-24T15:30:00.000Z'), // 12:30 em Brasília (UTC-3)
+          fk_id_chat: 5,
+          fk_id_func: 20,
+          funcionario: { nome: 'Maria' },
+        },
+      ]);
+
+      const res = await service.getMessages(5, mockCaller);
+      expect(res.data[0].time).toBe('12:30');
+      expect(res.data[0].sentAt).toBe('2026-11-24T15:30:00.000Z');
+      expect(res.data[0].sender).toBe('them');
+    });
+
+    it('persists uploaded media into PostgreSQL chat_arquivos for serverless durability', async () => {
+      const res = await service.uploadMedia(
+        { filename: 'comprovante.png', base64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' },
+        mockCaller,
+      );
+
+      expect(res.status).toBe('success');
+      expect(res.data.url).toMatch(/^\/uploads\/chat\/chat-\d+-\d+\.png$/);
+      expect(messageRepository.manager.query).toHaveBeenCalled();
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Clipboard,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { authenticatedFetch } from "../services/api";
@@ -171,8 +172,12 @@ export default function CadastroFuncionario() {
     return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
   };
 
-  const copyToClipboard = (text: string) => {
-    Clipboard.setString(text);
+  const copyToClipboard = async (text: string) => {
+    if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text).catch(() => Clipboard.setString(text));
+    } else {
+      Clipboard.setString(text);
+    }
     Alert.alert("Copiado!", "Copiado para a área de transferência.");
   };
 

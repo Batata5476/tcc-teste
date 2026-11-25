@@ -4,8 +4,18 @@ import { ConfigService } from '@nestjs/config';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { json, urlencoded } from 'express';
 import * as express from 'express';
+import type { Request, Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
+
+function getExpress(): any {
+  if (typeof express === 'function') return express;
+  if ((express as any)?.default && typeof (express as any).default === 'function') {
+    return (express as any).default;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require('express');
+}
 
 function validateRequiredEnv(config: ConfigService) {
   const jwtSecret = config.get<string>('JWT_SECRET');
@@ -36,17 +46,29 @@ function configureApp(app: INestApplication) {
   const config = app.get(ConfigService);
   validateRequiredEnv(config);
 
+  const instance = app.getHttpAdapter().getInstance();
+  if (instance && typeof instance.set === 'function') {
+    // Necessário atrás do proxy da Vercel para o Throttler identificar o IP individual de cada celular
+    instance.set('trust proxy', 1);
+  }
+
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ limit: '10mb', extended: true }));
+
+  const expressFn = getExpress();
   app.use(
     '/uploads',
-    express.static(join(process.cwd(), 'uploads'), {
-      setHeaders: (res) => {
+    expressFn.static(join(process.cwd(), 'uploads'), {
+      setHeaders: (res: any) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
+        res.setHeader(
+          'Content-Security-Policy',
+          "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox",
+        );
       },
     }),
   );
+
   app.enableCors();
   app.useGlobalPipes(
     new ValidationPipe({
@@ -56,14 +78,24 @@ function configureApp(app: INestApplication) {
     }),
   );
 
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/', (_req: any, res: any) => {
+    res.json({
+      status: 'online',
+      message: 'Coopera API NestJS ativa',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   return config;
 }
 
-let cachedServer: express.Express | null = null;
+let cachedServer: any = null;
 
-async function getServerlessHandler(): Promise<express.Express> {
+async function getServerlessHandler(): Promise<any> {
   if (!cachedServer) {
-    const expressApp = express();
+    const expressFn = getExpress();
+    const expressApp = expressFn();
     const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
     configureApp(app);
     await app.init();
@@ -72,7 +104,7 @@ async function getServerlessHandler(): Promise<express.Express> {
   return cachedServer;
 }
 
-export default async function handler(req: express.Request, res: express.Response) {
+export default async function handler(req: Request, res: Response) {
   const server = await getServerlessHandler();
   return server(req, res);
 }

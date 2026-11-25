@@ -156,3 +156,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
     data TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     detalhes TEXT
 );
+
+CREATE TABLE IF NOT EXISTS chat_arquivos (
+    filename VARCHAR(160) PRIMARY KEY,
+    mime_type VARCHAR(100) NOT NULL,
+    original_name VARCHAR(255),
+    conteudo BYTEA NOT NULL,
+    criado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);

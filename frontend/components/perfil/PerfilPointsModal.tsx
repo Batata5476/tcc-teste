@@ -30,11 +30,7 @@ export default function PerfilPointsModal({
     const msg = value
       ? "Pontuação ativada! Atividades concluídas gerarão pontos normalmente."
       : "Pontuação desativada. As atividades concluídas não acumularão pontos.";
-    if (Platform.OS === "web") {
-      window.alert(msg);
-    } else {
-      Alert.alert("Sistema de Pontuações", msg);
-    }
+    Alert.alert("Sistema de Pontuações", msg);
   };
 
   return (

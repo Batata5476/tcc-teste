@@ -141,19 +141,30 @@ export default function PerfilAdm() {
     }
   };
 
-  // Função para salvar a localização da empresa com latitude e longitude atuais do GPS do dispositivo
-  const handleSaveCompanyLocation = async () => {
+  // Confirma com o administrador antes de sobrescrever as coordenadas GPS da sede
+  const handleSaveCompanyLocation = () => {
     if (savingCompanyLocation) return;
 
     if (!companyLocation?.id) {
-      const msg = "Empresa não encontrada. Recarregue a página e tente novamente.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Empresa não encontrada", msg);
-      }
+      Alert.alert(
+        "Empresa não encontrada",
+        "Empresa não encontrada. Recarregue a página e tente novamente."
+      );
       return;
     }
+
+    Alert.alert(
+      "Confirmar Localização",
+      "Deseja atualizar a localização da sede da empresa para a sua posição GPS atual? Isso ajustará o raio de validação do Ponto-E dos colaboradores.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Sim, atualizar", onPress: performSaveCompanyLocation },
+      ]
+    );
+  };
+
+  const performSaveCompanyLocation = async () => {
+    if (savingCompanyLocation || !companyLocation?.id) return;
 
     setSavingCompanyLocation(true);
     try {
@@ -205,20 +216,11 @@ export default function PerfilAdm() {
 
         // Atualiza o estado local com a Localização
         setCompanyLocation(body.data);
-        const successMsg = "A localização da sede foi atualizada com sucesso!";
-        if (Platform.OS === "web") {
-          window.alert(successMsg);
-        } else {
-          Alert.alert("Localização salva", successMsg);
-        }
+        Alert.alert("Localização salva", "A localização da sede foi atualizada com sucesso!");
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Não foi possível obter o GPS.";
-      if (Platform.OS === "web") {
-        window.alert(`Erro: ${errorMsg}`);
-      } else {
-        Alert.alert("Erro", errorMsg);
-      }
+      Alert.alert("Erro", errorMsg);
     } finally {
       setSavingCompanyLocation(false);
     }
