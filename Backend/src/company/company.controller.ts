@@ -73,13 +73,6 @@ export class CompanyController {
     return this.companyService.sendTestMailForAdmin(req.user.sub, body?.recipientEmail);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(...ADMIN_ROLES)
-  @Post('presentation-preset')
-  applyPresentationPreset(@Request() req) {
-    return this.companyService.applyPresentationPreset(req.user.empresa_id, req.user.sub);
-  }
-
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
   @Permissions('company.read')
   @Get(':id')
