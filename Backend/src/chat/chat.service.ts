@@ -202,7 +202,7 @@ export class ChatService {
               : 'Documento';
           safeLastMessage = comment ? `📎 ${fileName} • ${comment}` : `📎 ${fileName}`;
         } else if (safeLastMessage.includes('/uploads/chat/')) {
-          safeLastMessage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(safeLastMessage)
+          safeLastMessage = /\.(jpg|jpeg|png|webp|gif|heic|heif|svg)$/i.test(safeLastMessage)
             ? '📷 Foto'
             : '📎 Arquivo';
         }
@@ -369,7 +369,7 @@ export class ChatService {
     }
 
     const ALLOWED_EXTENSIONS = new Set([
-      '.jpg', '.jpeg', '.png', '.webp', '.gif',
+      '.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif',
       '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.mp4',
     ]);
 

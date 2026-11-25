@@ -74,51 +74,92 @@ function formatMessageTimeLocal(sentAt?: string | null, fallbackTime?: string): 
   return fallbackTime || "";
 }
 
-// Reduz fotos grandes de celulares (iPhone/Android Web) para ~150-350KB antes do envio na Vercel
-async function compressWebImageFile(file: File): Promise<string> {
+function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Falha ao ler imagem"));
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      if (typeof document === "undefined" || typeof window === "undefined") {
-        resolve(dataUrl);
-        return;
-      }
-      const img = new window.Image();
-      img.onload = () => {
-        try {
-          const MAX_DIM = 1280;
-          let width = img.width;
-          let height = img.height;
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width >= height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            resolve(dataUrl);
-            return;
-          }
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.78);
-          resolve(compressed.length < dataUrl.length ? compressed : dataUrl);
-        } catch {
-          resolve(dataUrl);
-        }
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    };
+    reader.onerror = () => reject(new Error("Falha ao ler arquivo"));
+    reader.onload = (ev) => resolve((ev.target?.result as string) || "");
     reader.readAsDataURL(file);
+  });
+}
+
+// Reduz fotos grandes de celulares (iPhone Fototeca/Câmera e Android) usando ObjectURL + Canvas
+async function compressWebImageFile(file: File): Promise<{ dataUrl: string; convertedToJpeg: boolean }> {
+  if (typeof document === "undefined" || typeof window === "undefined" || typeof URL === "undefined") {
+    const raw = await readFileAsDataUrl(file);
+    return { dataUrl: raw, convertedToJpeg: false };
+  }
+
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new window.Image();
+
+    const cleanup = () => {
+      try {
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        // ignore
+      }
+    };
+
+    img.onload = () => {
+      try {
+        const MAX_DIM = 1280;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        if (!width || !height) {
+          cleanup();
+          readFileAsDataUrl(file)
+            .then((raw) => resolve({ dataUrl: raw, convertedToJpeg: false }))
+            .catch(reject);
+          return;
+        }
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width >= height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          cleanup();
+          readFileAsDataUrl(file)
+            .then((raw) => resolve({ dataUrl: raw, convertedToJpeg: false }))
+            .catch(reject);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.8);
+        cleanup();
+        if (compressed && compressed.startsWith("data:image/jpeg;base64,") && compressed.length > 64) {
+          resolve({ dataUrl: compressed, convertedToJpeg: true });
+        } else {
+          readFileAsDataUrl(file)
+            .then((raw) => resolve({ dataUrl: raw, convertedToJpeg: false }))
+            .catch(reject);
+        }
+      } catch {
+        cleanup();
+        readFileAsDataUrl(file)
+          .then((raw) => resolve({ dataUrl: raw, convertedToJpeg: false }))
+          .catch(reject);
+      }
+    };
+
+    img.onerror = () => {
+      cleanup();
+      readFileAsDataUrl(file)
+        .then((raw) => resolve({ dataUrl: raw, convertedToJpeg: false }))
+        .catch(reject);
+    };
+
+    img.src = objectUrl;
   });
 }
 
@@ -305,6 +346,7 @@ export default function ChatScreen() {
 
   const scrollViewRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
+  const webFileInputRef = useRef<any>(null);
   const selectedChatRef = useRef<ChatListItem | null>(selectedChat);
   const hiddenMessageIdsRef = useRef<Set<string>>(new Set());
 
@@ -708,67 +750,63 @@ export default function ChatScreen() {
     }
   };
 
+  // Processa arquivo escolhido no <input type="file"> persistente na Web (compatível com Fototeca do iPhone Safari)
+  const handleWebFileSelected = async (e: any) => {
+    const file: File | undefined = e?.target?.files?.[0];
+    if (e?.target) {
+      e.target.value = "";
+    }
+    if (!file) return;
+
+    const isImg =
+      file.type?.startsWith("image/") ||
+      /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(file.name || "");
+
+    if (!isImg && file.size > 3.2 * 1024 * 1024) {
+      Alert.alert(
+        "Arquivo muito grande",
+        "Envie documentos de até 3 MB para garantir envio rápido."
+      );
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      if (isImg && !/\.gif$/i.test(file.name || "")) {
+        const { dataUrl, convertedToJpeg } = await compressWebImageFile(file);
+        const baseName = (file.name || "foto").replace(/\.[^.]+$/, "") || "foto";
+        const origExtMatch = (file.name || "").match(/\.([a-zA-Z0-9]+)$/);
+        const fallbackExt = origExtMatch ? `.${origExtMatch[1].toLowerCase()}` : ".jpg";
+        const finalName = convertedToJpeg ? `${baseName}.jpg` : `${baseName}${fallbackExt}`;
+
+        setAttachedFile({
+          name: finalName,
+          type: "image",
+          uri: dataUrl,
+          base64: dataUrl,
+        });
+      } else {
+        const b64 = await readFileAsDataUrl(file);
+        const defaultName = isImg ? "imagem.gif" : "documento.pdf";
+        setAttachedFile({
+          name: file.name || defaultName,
+          type: isImg ? "image" : "file",
+          uri: isImg ? b64 : undefined,
+          base64: b64,
+        });
+      }
+    } catch {
+      Alert.alert("Erro", "Não foi possível processar a foto ou arquivo selecionado.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Abre o seletor de arquivos/imagens ao clicar no clipe
   const handlePickAttachment = async () => {
     try {
       if (Platform.OS === "web") {
-        if (typeof document !== "undefined") {
-          const input = document.createElement("input");
-          input.type = "file";
-          input.accept = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv";
-          input.onchange = async (e: any) => {
-            const file: File | undefined = e.target?.files?.[0];
-            if (!file) return;
-
-            const isImg =
-              file.type?.startsWith("image/") ||
-              /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
-            const cleanName = isImg
-              ? (file.name ? file.name.replace(/\.[^.]+$/, ".jpg") : "imagem.jpg")
-              : (file.name || "documento.pdf");
-
-            if (!isImg && file.size > 3.2 * 1024 * 1024) {
-              Alert.alert(
-                "Arquivo muito grande",
-                "Envie documentos de até 3 MB para garantir envio rápido."
-              );
-              return;
-            }
-
-            try {
-              if (isImg && !/\.gif$/i.test(file.name)) {
-                const compressedB64 = await compressWebImageFile(file);
-                setAttachedFile({
-                  name: cleanName,
-                  type: "image",
-                  uri:
-                    typeof URL !== "undefined"
-                      ? URL.createObjectURL(file)
-                      : compressedB64,
-                  base64: compressedB64,
-                });
-              } else {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  const b64 = event.target?.result as string;
-                  setAttachedFile({
-                    name: cleanName,
-                    type: isImg ? "image" : "file",
-                    uri:
-                      typeof URL !== "undefined"
-                        ? URL.createObjectURL(file)
-                        : undefined,
-                    base64: b64,
-                  });
-                };
-                reader.readAsDataURL(file);
-              }
-            } catch {
-              Alert.alert("Erro", "Não foi possível processar o arquivo selecionado.");
-            }
-          };
-          input.click();
-        }
+        webFileInputRef.current?.click();
       } else {
         const permissionResult =
           await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1823,15 +1861,31 @@ export default function ChatScreen() {
       <View style={styles.inputArea}>
         <View style={styles.inputCapsule}>
           <TouchableOpacity
-            style={styles.capsuleIconBtn}
+            style={[styles.capsuleIconBtn, { position: "relative", overflow: "hidden" }]}
             activeOpacity={0.7}
-            onPress={handlePickAttachment}
+            onPress={Platform.OS === "web" ? undefined : handlePickAttachment}
           >
             <Ionicons
               name={attachedFile ? "attach" : "attach-outline"}
               size={22}
               color={attachedFile ? "#285A71" : "#64748B"}
             />
+            {Platform.OS === "web" &&
+              React.createElement("input", {
+                ref: webFileInputRef,
+                type: "file",
+                accept: "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv",
+                onChange: handleWebFileSelected,
+                style: {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  opacity: 0,
+                  cursor: "pointer",
+                },
+              })}
           </TouchableOpacity>
 
           <TextInput
